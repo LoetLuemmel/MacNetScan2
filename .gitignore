@@ -1,0 +1,6 @@
+# Apple's Open Transport SDK (headers and 68K libraries) is not redistributed here:
+# tools/patch_otlibs.py turns the SDK's own .o files into the linkable ones.
+otlibs/
+probe/OpenTptLinks.h
+dist/
+.DS_Store

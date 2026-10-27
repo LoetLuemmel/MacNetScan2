@@ -1,0 +1,66 @@
+MacNetScan 2
+============
+
+A network scanner for System 7 on the classic Macintosh. MacNetScan sweeps the
+local network over Open Transport and shows every device it finds - address,
+name, round-trip time and one LED per service - in a dark instrument-panel
+window with view tabs, progress bars and activity lights. Version 2 is a
+rebuild of MacNetScan 1 with Symantec's Visual Architect and the THINK Class
+Library; it was written, compiled and tested through AppleBridge.
+
+
+The four views
+--------------
+IP Network   Sweeps the own /24: a concurrent, asynchronous TCP connect to ten
+             well-known ports per address (AppleBridge, HTTP, HTTPS, SMB,
+             NetBIOS, AFP, SSH, IPP, FTP, Telnet). Names come from NetBIOS,
+             multicast DNS or reverse DNS. Round-trip times are taken when the
+             answer arrives, to a tenth of a millisecond. Click a host for the
+             detail panel.
+AppleTalk    This Mac's node and zone, then every NBP entity in every zone, with
+             a type LED (file servers, printers, workstations).
+Listen       Passive: sends nothing. Shows what reaches this Mac anyway - ARP,
+             IP broadcasts and multicasts, DHCP, NetBIOS, AppleTalk and AARP -
+             as protocol meters, a table of stations (MAC, IP and AppleTalk
+             address) and an event log: new stations, gratuitous ARP, DHCP, and
+             IP address conflicts.
+Tools        Ping (TCP connect to port 80), DNS lookup (both directions) and
+             traceroute (ICMP).
+
+Scan starts what the current view does (the sweep, the NBP lookup, listening);
+Stop ends it. Export saves the scan report as tab-delimited text, Copy puts it
+on the clipboard. Scan > Options sets the address range, the timeout, the number
+of probes at once and the port list; they are kept in "MacNetScan Prefs" in the
+Preferences folder.
+
+
+Requirements
+------------
+- System 7 with Open Transport 1.1 or later (e.g. 7.5.3 to 7.6.1).
+- A 68K Macintosh (or a PowerPC one running 68K code), colour, 720 x 460 or
+  more for the window.
+- Tested under Basilisk II with System 7.6.1.
+
+
+Under Basilisk II
+-----------------
+The Listen view sees this Mac's own traffic, broadcasts and multicasts, and
+whatever the host's network card hands on - not other machines' traffic on a
+switched network. MacNetScan never asks the Ethernet driver for raw or
+promiscuous mode: under Basilisk II both requests hang the emulated Mac.
+
+
+Authorized use only
+-------------------
+MacNetScan actively probes hosts (port connects, NBP lookups, ping,
+traceroute). Use it only on networks you own or are explicitly allowed to scan.
+Scanning other networks may break acceptable-use rules or the law and can set
+off intrusion-detection systems. The author accepts no responsibility for
+misuse.
+
+
+License
+-------
+MIT License - Copyright (c) 2026 Pit Förster. See License.txt.
+
+Made by Pit Förster with Claude Code, through AppleBridge.
