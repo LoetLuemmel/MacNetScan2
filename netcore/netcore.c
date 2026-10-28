@@ -1522,6 +1522,36 @@ static OSStatus LsJoin(EndpointRef ep, const UInt8 *group)
 	return (err == noErr && opt.status != T_SUCCESS) ? (OSStatus) -1 : err;
 }
 
+/* ------------------------------------------------------------------ frames: the capture (the dissector is frames.c) */
+
+static NCFrame			*gFrames = NULL;
+static long				gNFrames = 0;
+static OTTimeStamp		gLsStamp;
+static const UInt16 kLsType[LS_COUNT] = { 0x0806, 0x0800, 0x809B, 0x80F3, 0x86DD, 0x88CC };
+
+static void LsCapture(short k, const UInt8 *mac, const UInt8 *p, long n)
+{
+	NCFrame *f;
+	OTTimeStamp now;
+	if (!gFrames || n <= 0) return;
+	f = &gFrames[gNFrames % NC_MAXFRAMES];
+	OTGetTimeStamp(&now);
+	f->us = (unsigned long) StampUs(&gLsStamp, &now);
+	BlockMove(mac, f->src, 6);
+	f->type = kLsType[k];
+	f->len = (short) (n > 32767 ? 32767 : n);
+	f->caplen = (short) (n > NC_SNAPLEN ? NC_SNAPLEN : n);
+	BlockMove(p, f->data, f->caplen);
+	gNFrames++;
+}
+
+long NC_FrameTotal(void) { return gNFrames; }
+const NCFrame *NC_Frame(long i)
+{
+	if (!gFrames || i < 0 || i >= gNFrames || i < gNFrames - NC_MAXFRAMES) return NULL;
+	return &gFrames[i % NC_MAXFRAMES];
+}
+
 long NC_ListenStart(void)
 {
 	struct T8022Address a, got;
@@ -1533,6 +1563,7 @@ long NC_ListenStart(void)
 	if (!gEvents) gEvents = (char (*)[NC_EVENTLEN]) NewPtrClear((long) NC_MAXEVENTS * NC_EVENTLEN);
 	if (!gLsBuf) gLsBuf = (UInt8 *) NewPtr(LS_BUFSIZE);
 	if (!gEdges) gEdges = (NCEdge *) NewPtrClear((long) NC_MAXEDGES * sizeof(NCEdge));
+	if (!gFrames) gFrames = (NCFrame *) NewPtr((long) NC_MAXFRAMES * sizeof(NCFrame));	/* ~160 KB; the view does without */
 	if (!gStations || !gEvents || !gLsBuf || !gEdges) return memFullErr;
 	for (k = 0; k < LS_COUNT; k++) {
 		gLsEp[k] = OTOpenEndpoint(OTCreateConfiguration(kEnetName), 0, NULL, &err);
@@ -1556,6 +1587,8 @@ long NC_ListenStart(void)
 	for (k = 0; k < LS_COUNT; k++) if (gLsEp[k]) OTSetNonBlocking(gLsEp[k]);
 	gListening = true;
 	gLsStart = TickCount();
+	OTGetTimeStamp(&gLsStamp);								/* a new capture: frame times count from here */
+	gNFrames = 0;
 	{
 		char s[NC_EVENTLEN], nb[8];
 		UToStr((unsigned long) gLs.joined, nb);
@@ -1594,6 +1627,7 @@ void NC_ListenIdle(void)
 			if (res != noErr) break;					/* kOTNoDataErr: nothing more for now */
 			gLs.total++;
 			gActivity++;
+			LsCapture(k, src.fHWAddr, gLsBuf, (long) rcv.udata.len);
 			switch (k) {
 				case LS_ARP:	LsArp(src.fHWAddr, gLsBuf, (long) rcv.udata.len); break;
 				case LS_IP:		LsIp(src.fHWAddr, gLsBuf, (long) rcv.udata.len); break;
@@ -1631,6 +1665,7 @@ void NC_Shutdown(void)
 	if (gEvents) { DisposePtr((Ptr) gEvents); gEvents = NULL; gNEvents = 0; }
 	if (gLsBuf) { DisposePtr((Ptr) gLsBuf); gLsBuf = NULL; }
 	if (gEdges) { DisposePtr((Ptr) gEdges); gEdges = NULL; gNEdges = 0; }
+	if (gFrames) { DisposePtr((Ptr) gFrames); gFrames = NULL; gNFrames = 0; }
 	if (gRaw) { OTCloseProvider(gRaw); gRaw = NULL; }
 	if (gUdp) { OTCloseProvider(gUdp); gUdp = NULL; }
 	if (gSvc) { OTCloseProvider(gSvc); gSvc = NULL; }

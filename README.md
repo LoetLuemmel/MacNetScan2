@@ -15,6 +15,7 @@ System 7.6.1 guest in Basilisk II through [AppleBridge](https://github.com/LoetL
 | **Listen** | Passive - sends nothing but four multicast joins. ARP, IP broadcasts/multicasts (mDNS), DHCP, NetBIOS, IPv6, LLDP, AppleTalk and AARP that reach this Mac: protocol meters, a station table (MAC, IP, AppleTalk address or LLDP system name), an event log (new stations, gratuitous ARP, DHCP, IP conflicts, LLDP neighbours). |
 | **Tools** | Ping (TCP connect), DNS lookup (both directions), traceroute (ICMP). |
 | **Map** | Who sends to whom, from what Listen hears: the 20 busiest stations around an oval in address order, the groups they send to (broadcast, mDNS, IPv6 multicast, LLDP, AppleTalk) on an inner ring, unicast as chords; destinations never heard sending are hollow. Colour by target, width by packets (1/10/100/1000); redrawn every 2 s through a GWorld, so it does not flicker. |
+| **Frames** | The capture behind Listen as a packet list - number, time, source, destination, protocol (coloured), length, a one-line summary - and below it the selected frame's protocol tree (link, ARP/AARP, IPv4/IPv6, TCP/UDP/ICMP/ICMPv6, DNS/mDNS, DHCP, NetBIOS, LLDP, DDP/NBP/ATP) and its bytes in hex. The last 400 frames, 384 bytes of each. The list follows the newest frame; a click on a frame holds it still, a second click lets it follow again. Open Transport hands frames over without their MAC header, so the link layer shows the sender and the type only. |
 
 Plus: Export / Copy of a tab-delimited report, **Scan › Options** (range, timeout, probes at once, ports; kept in
 `MacNetScan Prefs`), an About box with MacNetScan 1's radar sweep, a Finder icon.
@@ -26,9 +27,10 @@ Plus: Export / Copy of a tab-delimited report, **Scan › Options** (range, time
 ## Layout
 
 ```
-netcore/     the engine, plain C, all Open Transport (Start / Idle / result, nothing blocks)
+netcore/     the engine, plain C, all Open Transport (Start / Idle / result, nothing blocks);
+             frames.c the dissector behind the Frames view (reads captured frames, no OT calls)
 mac/         the TCL application: CMain (window, tool strip, IP view), CViews (AppleTalk, Listen, Tools,
-             About, Options), CApp; Look.h shared colours and helpers; Menus.r, Extras.r, Icons.r
+             Map, Frames, About, Options), CApp; Look.h shared colours and helpers; Menus.r, Extras.r, Icons.r
 mac/generated/  what Visual Architect generated, for reference
 mac/rsrc/    Visual Architect.rsrc and Project Resources.rsrc as MacBinary
 tools/       mkicons.py (Finder icons from a PNG), patch_otlibs.py (see below), mkotnames.py (OTNames.h)
@@ -41,13 +43,13 @@ original/    MacNetScan 1 (MPW, one C file)
 1. A Visual Architect project in Symantec C++ 7 (project model "Visual Architect Project"), Generate once.
    Replace `Source:CMain.*`, `CApp.*` with the files in `mac/`, add `CViews.cp`, `Look.h`; Rez `Menus.r Extras.r
    Icons.r` into `Project Resources.rsrc` (or use the copy in `mac/rsrc/`).
-2. Add `netcore/netcore.c` (it includes `otstubs.c`) and the four Open Transport 68K libraries through the
+2. Add `netcore/netcore.c` (it includes `otstubs.c`), `netcore/frames.c` and the four Open Transport 68K libraries through the
    ".o Converter": `OpenTransport.o`, `OpenTransportApp.o`, `OpenTptInet.o`, `OpenTptATalk.o` - **patched** with
    `tools/patch_otlibs.py` first (the SDK's `Fail` and `FlushCache` collide with TCL's). The OT SDK headers go next
    to `netcore.c`; `OTCompat.h` and `OTNames.h` (MPW's upper-case pascal names) are here.
 3. Project type: **Far CODE**, partition 1500 K, creator `IPSc`. Segments: the OT libraries in one, `CViews.cp` in
-   another (16.7 K of 32 K), `netcore.c` alone in a third (17.9 K) - drag it below the last segment in the project
-   window. Nothing calls `UnloadSeg`, so the Open Transport notifiers in `netcore.c` stay resident.
+   another (24.5 K of 32 K), `netcore.c` alone in a third (18.3 K), `frames.c` alone in a fourth (12.4 K) - drag
+   each below the last segment in the project window. Nothing calls `UnloadSeg`, so the Open Transport notifiers in `netcore.c` stay resident.
 4. Build Application, then `SetFile -a B MacNetScan`.
 
 Why each step is there: the comments in `netcore/netcore.c`, `tools/patch_otlibs.py` and `probe/sniff_main.c`.

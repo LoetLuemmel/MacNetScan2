@@ -155,6 +155,24 @@ long		NC_EventTotal(void);					/* events so far; the last NC_MAXEVENTS are kept 
 const char *NC_EventLine(long i);					/* i < NC_EventTotal(), "" once dropped */
 short		NC_EdgeCount(void);
 const NCEdge *NC_Edge(short i);
+
+	/* frames: what Listen received, the last NC_MAXFRAMES kept for the Frames view. Open Transport hands a frame
+	   on without its MAC header: the sender's MAC comes along, the destination MAC does not. */
+#define NC_MAXFRAMES	400
+#define NC_SNAPLEN		384
+#define NC_DETAILLEN	64
+typedef struct {
+	unsigned long	us;							/* microseconds since listening began */
+	unsigned char	src[6];						/* the sender's MAC */
+	unsigned short	type;						/* EtherType; AppleTalk 0x809B and AARP 0x80F3 for 802.2 SNAP */
+	short			len, caplen;				/* as received; bytes kept */
+	unsigned char	data[NC_SNAPLEN];			/* from the layer-3 header on */
+} NCFrame;
+
+long		NC_FrameTotal(void);					/* frames so far */
+const NCFrame *NC_Frame(long i);				/* i < NC_FrameTotal(); NULL once overwritten */
+void		NC_FrameSummary(const NCFrame *f, char *src, char *dst, char *proto, char *info);	/* 48, 48, 16, 96 */
+short		NC_FrameDetail(const NCFrame *f, char (*lines)[NC_DETAILLEN], short max);	/* the protocol tree */
 void		NC_MACToStr(const unsigned char *mac, char *out);	/* "00:0c:6c:0b:0e:ad" */
 #define NC_MAXEVENTS	64
 

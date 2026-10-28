@@ -34,11 +34,12 @@ class CMain;
 #define cmdViewListen	612L	/*            Listen				*/
 #define cmdViewTools	613L	/*            Tools					*/
 #define cmdViewMap		614L	/*            Map					*/
+#define cmdViewFrames	615L	/*            Frames				*/
 #define cmdToolPing		620L	/* Tools view buttons				*/
 #define cmdToolDns		621L
 #define cmdToolTrace	622L
 
-enum { kViewIP = 0, kViewAT, kViewListen, kViewTools, kViewMap, kViewCount };
+enum { kViewIP = 0, kViewAT, kViewListen, kViewTools, kViewMap, kViewFrames, kViewCount };
 
 	// A button of the tool strip: an icon drawn in QuickDraw, a label under it.
 enum { kIconScan, kIconStop, kIconExport, kIconCopy };
@@ -186,6 +187,7 @@ public:
 
 	void	Pump(long *maxSleep);			// the chore: one slice of engine work
 	void	HostSelected(unsigned long anIP);	// CHostList: a row was clicked
+	void	FrameSelected(long aFrame);			// CFrameList: a frame was clicked, -1 none
 	short	CurrentView(void) { return view; }
 
 protected:
@@ -209,6 +211,9 @@ protected:
 	CATPane		*atPane;		// the AppleTalk, Listen and Tools views (CViews.cp)
 	CListenPane	*listenPane;
 	CMapPane	*mapPane;
+	CFramesPane	*framesPane;
+	CScrollPane	*frameScroll;
+	CFrameList	*frameList;
 	CToolsPane	*toolsPane;
 	CHostField	*hostField;
 	CLightButton *pingBtn, *dnsBtn, *traceBtn;

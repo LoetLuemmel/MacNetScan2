@@ -10,6 +10,7 @@
 #pragma once
 
 #include "CPane.h"
+#include "CPanorama.h"
 #include "CEditText.h"
 #include <QDOffscreen.h>
 
@@ -69,6 +70,38 @@ protected:
 	Boolean			selected;
 	short			selSt;					// the selected station, or -1 with
 	unsigned long	selIP;					// the selected address only ever seen as a destination
+};
+
+	// Frames: the capture as a packet list (scrolled, follows the newest), and below it the selected frame's protocol
+	// tree and bytes. A click selects a frame and holds the list still; a click on it again lets it follow again.
+#define kFrameRow		13
+#define kFrameHeader	16
+#define kFrameListH		(12 * kFrameRow)
+class CFrameList : public CPanorama
+{
+public:
+	CFrameList(CView *anEnclosure, CBureaucrat *aSupervisor, short aWidth, short aHeight);
+
+	virtual	void	Draw(Rect *area);
+	virtual	void	DoClick(Point hitPt, short modifierKeys, long when);
+	void			Update(void);			// new frames: grow, and follow the newest unless one is selected
+	void			Restart(void) { sel = -1; Update(); }	// a new capture began
+
+protected:
+	long			first, rows;			// frame number of row 0, rows in the list
+	long			sel;					// the selected frame number, -1: none, the list follows
+};
+
+class CFramesPane : public CPane
+{
+public:
+	CFramesPane(CView *anEnclosure, CBureaucrat *aSupervisor, short aWidth, short aHeight, short aHEncl, short aVEncl);
+
+	virtual	void	Draw(Rect *area);
+	void			SetFrame(long aFrame);	// -1: none
+
+protected:
+	long			frameNo;				// not "frame": that is CPane's rectangle
 };
 
 	// Tools: what ping, DNS or traceroute found, below the host field and its buttons.

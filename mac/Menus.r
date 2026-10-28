@@ -1,5 +1,5 @@
 /* Menus.r - MacNetScan 2's own menus beside Visual Architect's Apple, File and Edit: Scan (600-603) and View
-   (610-614, CMain.h). TCL takes the command number from "#n" in the item text; CApp::SetUpMenus adds both to the bar.
+   (610-615, CMain.h). TCL takes the command number from "#n" in the item text; CApp::SetUpMenus adds both to the bar.
      Rez Menus.r -a -o "Project Resources.rsrc"   (THINK merges it into MacNetScan.\0xB9.rsrc and the app) */
 
 #include "Types.r"
@@ -32,7 +32,8 @@ resource 'MENU' (129, "View") {
 		"AppleTalk#611", noIcon, "2", noMark, plain,
 		"Listen#612", noIcon, "3", noMark, plain,
 		"Tools#613", noIcon, "4", noMark, plain,
-		"Map#614", noIcon, "5", noMark, plain
+		"Map#614", noIcon, "5", noMark, plain,
+		"Frames#615", noIcon, "6", noMark, plain
 	}
 };
 

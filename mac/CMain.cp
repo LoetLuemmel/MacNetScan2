@@ -630,7 +630,7 @@ void CMain::MakeNewWindow()
 	stopBtn = new CToolButton(itsWindow, this, 64, 2, "Stop", kIconStop, cmdScanStop);
 	exportBtn = new CToolButton(itsWindow, this, 128, 2, "Export", kIconExport, cmdExport);
 	copyBtn = new CToolButton(itsWindow, this, 184, 2, "Copy", kIconCopy, cmdCopyReport);
-	tabs = new CTabBar(itsWindow, this, 340, 270, 12);
+	tabs = new CTabBar(itsWindow, this, 408, 246, 12);			/* six views: 68 px a tab */
 	actLed = new CLedPane(itsWindow, this, 16, kWinWidth - 52, 12, &kLedAct);
 	{															/* the other views, hidden	*/
 		short h = kWinHeight - kStripHeight - kStatusHeight;
@@ -640,6 +640,13 @@ void CMain::MakeNewWindow()
 		listenPane->Hide();
 		mapPane = new CMapPane(itsWindow, this, kWinWidth, h, 0, kStripHeight);
 		mapPane->Hide();
+		framesPane = new CFramesPane(itsWindow, this, kWinWidth, h, 0, kStripHeight);	/* titles, tree, bytes */
+		framesPane->Hide();
+		frameScroll = new CScrollPane(itsWindow, this, kWinWidth, kFrameListH, 0, kStripHeight + kFrameHeader,
+									  sizFIXEDLEFT, sizFIXEDTOP, FALSE, TRUE, FALSE);	/* the list, over it */
+		frameList = new CFrameList(frameScroll, this, kWinWidth - 15, kFrameListH);
+		frameScroll->InstallPanorama(frameList);
+		frameScroll->Hide();
 		toolsPane = new CToolsPane(itsWindow, this, kWinWidth, h, 0, kStripHeight);	/* under field and buttons */
 		toolsPane->Hide();
 		hostField = new CHostField(itsWindow, this, 250, 18, 18, kStripHeight + 14);
@@ -754,6 +761,10 @@ void CMain::Pump(long *maxSleep)
 		lastDraw = now;
 		mapPane->Update();									/* offscreen, then copied: no flicker */
 	}
+	if (view == kViewFrames && NC_Listening() && now - lastDraw > 60) {	/* the frame list: once a second */
+		lastDraw = now;
+		frameList->Update();
+	}
 	if (view == kViewTools && toolMode != 0) {
 		long sig = NC_ToolLineCount() * 8L + NC_ToolState();
 		if (sig != lastToolSig) { lastToolSig = sig; toolsPane->Refresh(); }
@@ -771,6 +782,11 @@ void CMain::HostSelected(unsigned long anIP)
 	detail->SetHost(anIP);
 }
 
+void CMain::FrameSelected(long aFrame)
+{
+	framesPane->SetFrame(aFrame);
+}
+
 
 /******************************************************************************
  Scan control and the status bar
@@ -786,9 +802,11 @@ Boolean CMain::Busy()
 void CMain::StartScan()
 {
 	if (!netOK || stage != 0 || NC_Listening()) return;
-	if (view == kViewListen || view == kViewMap) {		/* Listen and Map: start hearing	*/
+	if (view == kViewListen || view == kViewMap || view == kViewFrames) {	/* start hearing: a new capture */
 		if (NC_ListenStart() != 0) SysBeep(1);
-		if (view == kViewMap) mapPane->Refresh(); else listenPane->Refresh();
+		frameList->Restart();
+		framesPane->SetFrame(-1);
+		if (view == kViewMap) mapPane->Refresh(); else if (view == kViewListen) listenPane->Refresh();
 		ShowStatus();
 		return;
 	}
@@ -863,6 +881,7 @@ void CMain::ShowStatus()
 	else if (view == kViewAT) CCat(s, "Ready - Scan looks up the AppleTalk devices, zone by zone.");
 	else if (view == kViewListen) CCat(s, "Ready - Scan listens to the network; nothing is sent.");
 	else if (view == kViewMap) CCat(s, "Ready - Scan listens and draws who sends to whom.");
+	else if (view == kViewFrames) CCat(s, "Ready - Scan captures what reaches this Mac; nothing is sent.");
 	else if (view == kViewTools) CCat(s, "Ready.");
 	else if (n > 0) CCat(s, "Ready.");
 	else CCat(s, "Ready - press Scan to sweep the local network.");
@@ -900,7 +919,7 @@ void CMain::SetView(short aView)
 	view = aView;
 	tabs->SetCurrent(aView);
 	listHeader->Hide(); listScroll->Hide(); detail->Hide();
-	atPane->Hide(); listenPane->Hide(); mapPane->Hide();
+	atPane->Hide(); listenPane->Hide(); mapPane->Hide(); framesPane->Hide(); frameScroll->Hide();
 	toolsPane->Hide(); hostField->Hide(); pingBtn->Hide(); dnsBtn->Hide(); traceBtn->Hide();
 	if (aView == kViewIP) {
 		listHeader->Show(); listScroll->Show(); detail->Show();
@@ -908,6 +927,7 @@ void CMain::SetView(short aView)
 	} else if (aView == kViewAT) atPane->Show();
 	else if (aView == kViewListen) listenPane->Show();
 	else if (aView == kViewMap) mapPane->Show();
+	else if (aView == kViewFrames) { framesPane->Show(); frameScroll->Show(); frameList->Update(); }
 	else {
 		toolsPane->Show(); hostField->Show(); pingBtn->Show(); dnsBtn->Show(); traceBtn->Show();
 	}
@@ -988,7 +1008,8 @@ void CMain::DoCommand(long theCommand)
 		case cmdViewAT:
 		case cmdViewListen:
 		case cmdViewTools:
-		case cmdViewMap:	SetView((short) (theCommand - cmdViewIP)); break;
+		case cmdViewMap:
+		case cmdViewFrames:	SetView((short) (theCommand - cmdViewIP)); break;
 		case cmdToolPing:	StartTool(1); break;
 		case cmdToolDns:	StartTool(2); break;
 		case cmdToolTrace:	StartTool(3); break;

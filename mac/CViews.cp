@@ -15,6 +15,7 @@
 #include "netcore.h"
 #include "Look.h"
 
+#include <CScrollPane.h>
 #include <Memory.h>
 #include <Dialogs.h>
 #include <Files.h>
@@ -719,6 +720,205 @@ void CMapPane::DrawInfo(Rect *rp, const Point *node)
 		DrawTrunc(head ? line[i] + 1 : line[i], (short) (k.right - k.left - 20));
 	}
 	TextFace(normal);
+}
+
+/******************************************************************************
+ CFrameList - the capture, one row a frame
+
+ ******************************************************************************/
+
+enum { kFcNo = 6, kFcTime = 46, kFcSrc = 108, kFcDst = 232, kFcProto = 356, kFcLen = 414, kFcInfo = 450 };
+
+static const RGBColor *ProtoColour(unsigned short type)		/* the Listen meters' colours */
+{
+	switch (type) {
+		case 0x0806: return &kMeterColour[0];
+		case 0x86DD: return &kMeterColour[5];
+		case 0x88CC: return &kMeterColour[6];
+		case 0x809B: return &kMeterColour[7];
+		case 0x80F3: return &kMeterColour[8];
+	}
+	return &kMeterColour[1];
+}
+
+static void CatTime(char *s, unsigned long us)					/* "12.345" */
+{
+	unsigned long ms = (us / 1000UL) % 1000UL;
+	CCatNum(s, (long) (us / 1000000UL));
+	CCat(s, ms < 10 ? ".00" : ms < 100 ? ".0" : ".");
+	CCatNum(s, (long) ms);
+}
+
+CFrameList::CFrameList(CView *anEnclosure, CBureaucrat *aSupervisor, short aWidth, short aHeight)
+	: CPanorama(anEnclosure, aSupervisor, aWidth, aHeight, 0, 0, sizELASTIC, sizELASTIC)
+{
+	first = rows = 0;
+	sel = -1;
+	SetScales(1, kFrameRow);									/* scrolls a row at a time		*/
+	SetWantsClicks(TRUE);
+	Update();
+}
+
+void CFrameList::Update()
+{
+	LongRect b;
+	LongPt pos;
+	short w, h;
+	long total = NC_FrameTotal(), vis;
+	if (sel >= 0) return;										/* a selection holds the list still */
+	rows = total < NC_MAXFRAMES ? total : NC_MAXFRAMES;
+	first = total - rows;
+	GetLengths(&w, &h);
+	b.left = 0; b.top = 0; b.right = w; b.bottom = rows;
+	SetBounds(&b);
+	if (itsScrollPane != NULL) itsScrollPane->AdjustScrollMax();
+	vis = h / kFrameRow;										/* follow the newest */
+	pos.h = 0; pos.v = rows > vis ? rows - vis : 0;
+	ScrollTo(&pos, FALSE);
+	if (itsScrollPane != NULL) itsScrollPane->Calibrate();
+	Refresh();
+}
+
+void CFrameList::Draw(Rect *area)
+{
+	LongRect lr;
+	Rect r, cut;
+	char src[48], dst[48], proto[16], info[96], s[16];
+	short w, h, y;
+	long i;
+
+	TextMode(srcOr);
+	RGBForeColor(&kWhiteC);
+	PaintRect(area);
+	TextFont(kGeneva); TextSize(9); TextFace(normal);
+	GetLengths(&w, &h);
+	for (i = 0; i < rows; i++) {
+		const NCFrame *f = NC_Frame(first + i);
+		lr.top = i * kFrameRow; lr.bottom = lr.top + kFrameRow;
+		lr.left = 0; lr.right = w;
+		FrameToQDR(&lr, &r);
+		if (!SectRect(&r, area, &cut)) continue;
+		if (first + i == sel) { RGBForeColor(&kSelRow); PaintRect(&r); }
+		else if (i & 1) { RGBForeColor(&kRowAlt); PaintRect(&r); }
+		y = (short) (r.top + 10);
+		RGBForeColor(&kInkSoft);
+		s[0] = '\0'; CCatNum(s, first + i + 1);
+		MoveTo((short) (r.left + kFcNo), y); DrawC(s);
+		if (f == NULL) { MoveTo((short) (r.left + kFcTime), y); DrawC("(overwritten)"); continue; }
+		NC_FrameSummary(f, src, dst, proto, info);
+		s[0] = '\0'; CatTime(s, f->us);
+		MoveTo((short) (r.left + kFcTime), y); DrawC(s);
+		RGBForeColor(&kInk);
+		MoveTo((short) (r.left + kFcSrc), y); DrawTrunc(src, kFcDst - kFcSrc - 6);
+		MoveTo((short) (r.left + kFcDst), y); DrawTrunc(dst, kFcProto - kFcDst - 6);
+		RGBForeColor(ProtoColour(f->type));
+		TextFace(bold);
+		MoveTo((short) (r.left + kFcProto), y); DrawTrunc(proto, kFcLen - kFcProto - 4);
+		TextFace(normal);
+		RGBForeColor(&kInkSoft);
+		s[0] = '\0'; CCatNum(s, f->len);
+		MoveTo((short) (r.left + kFcLen), y); DrawC(s);
+		RGBForeColor(&kInk);
+		MoveTo((short) (r.left + kFcInfo), y); DrawTrunc(info, (short) (r.right - r.left - kFcInfo - 4));
+	}
+	RGBForeColor(&kBlackC);
+}
+
+void CFrameList::DoClick(Point hitPt, short modifierKeys, long when)
+{
+	long row = hitPt.v / kFrameRow;
+	if (row < 0 || row >= rows) return;
+	sel = (first + row == sel) ? -1 : first + row;				/* the selected one again: follow again */
+	if (itsSupervisor != NULL) ((CMain *) itsSupervisor)->FrameSelected(sel);
+	if (sel < 0) Update(); else Refresh();
+}
+
+/******************************************************************************
+ CFramesPane - column titles above the list, protocol tree and bytes below
+
+ ******************************************************************************/
+
+CFramesPane::CFramesPane(CView *anEnclosure, CBureaucrat *aSupervisor, short aWidth, short aHeight,
+						 short aHEncl, short aVEncl)
+	: CPane(anEnclosure, aSupervisor, aWidth, aHeight, aHEncl, aVEncl, sizELASTIC, sizELASTIC)
+{
+	frameNo = -1;
+}
+
+void CFramesPane::SetFrame(long aFrame)
+{
+	frameNo = aFrame;
+	Refresh();
+}
+
+#define FP_LINES	30
+void CFramesPane::Draw(Rect *area)
+{
+	Rect r;
+	char lines[FP_LINES][NC_DETAILLEN], s[64];
+	const NCFrame *f = frameNo >= 0 ? NC_Frame(frameNo) : NULL;
+	short y, top, x, i, nl, hexX;
+	long off;
+
+	TextMode(srcOr);
+	FrameToQDR(&frame, &r);
+	RGBForeColor(&kViewBg);
+	PaintRect(&r);
+	y = (short) (r.top + 12);									/* the list's column titles */
+	SectionTitle((short) (r.left + kFcNo), y, "No.");
+	SectionTitle((short) (r.left + kFcTime), y, "Time");
+	SectionTitle((short) (r.left + kFcSrc), y, "Source");
+	SectionTitle((short) (r.left + kFcDst), y, "Destination");
+	SectionTitle((short) (r.left + kFcProto), y, "Protocol");
+	SectionTitle((short) (r.left + kFcLen), y, "Length");
+	SectionTitle((short) (r.left + kFcInfo), y, "Info");
+
+	top = (short) (r.top + kFrameHeader + kFrameListH + 6);		/* below the list */
+	RGBForeColor(&kStatusLn);
+	MoveTo((short) (r.left + 8), top); LineTo((short) (r.right - 8), top);
+	TextFont(kGeneva); TextSize(9); TextFace(normal);
+	if (f == NULL) {
+		RGBForeColor(&kInkSoft);
+		MoveTo((short) (r.left + 14), (short) (top + 20));
+		if (frameNo >= 0) DrawC("This frame has been overwritten - the last 400 are kept.");
+		else {
+			s[0] = '\0'; CCatNum(s, NC_FrameTotal()); CCat(s, " frames captured; the last 400 are kept.");
+			DrawC(NC_FrameTotal() > 0 ? s : "Press Scan to capture. Frames are what Listen hears; nothing is sent.");
+			MoveTo((short) (r.left + 14), (short) (top + 34));
+			DrawC("Click a frame for its protocol tree and bytes; click it again to follow the capture live.");
+		}
+		RGBForeColor(&kBlackC);
+		return;
+	}
+
+	nl = NC_FrameDetail(f, lines, FP_LINES);					/* the protocol tree, left */
+	hexX = (short) (r.right - 336);
+	for (i = 0, y = (short) (top + 16); i < nl && y < r.bottom - 4; i++, y += 12) {
+		Boolean head = (Boolean) (lines[i][0] == '\001');
+		TextFace(head ? bold : normal);
+		RGBForeColor(head ? &kInk : &kInkSoft);
+		MoveTo((short) (r.left + 14), y);
+		DrawTrunc(head ? lines[i] + 1 : lines[i], (short) (hexX - r.left - 28));
+	}
+	TextFace(normal);
+	RGBForeColor(&kStatusLn);									/* the bytes, right */
+	MoveTo((short) (hexX - 8), (short) (top + 6)); LineTo((short) (hexX - 8), (short) (r.bottom - 6));
+	TextFont(kMonaco); TextSize(9);
+	for (off = 0, y = (short) (top + 16); off < f->caplen && y < r.bottom - 4; off += 16, y += 11) {
+		static const char hx[] = "0123456789abcdef";
+		short o = 0;
+		s[o++] = hx[(off >> 12) & 15]; s[o++] = hx[(off >> 8) & 15]; s[o++] = hx[(off >> 4) & 15]; s[o++] = hx[off & 15];
+		s[o++] = ' ';
+		for (x = 0; x < 16 && off + x < f->caplen; x++) {
+			unsigned char b = f->data[off + x];
+			if (x == 8) s[o++] = ' ';
+			s[o++] = ' '; s[o++] = hx[b >> 4]; s[o++] = hx[b & 15];
+		}
+		s[o] = '\0';
+		RGBForeColor(&kInk);
+		MoveTo(hexX, y); DrawC(s);
+	}
+	RGBForeColor(&kBlackC);
 }
 
 /******************************************************************************
