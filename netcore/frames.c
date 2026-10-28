@@ -324,14 +324,49 @@ void NC_FrameSummary(const NCFrame *f, char *src, char *dst, char *proto, char *
 }
 
 	/* the protocol tree, one line per field; returns the count */
+#define L	(s = (nl < max ? lines[nl++] : lines[max - 1]), s[0] = 0, s)
+#define H	(s = L, StrCat(s, "\001"), s)							/* a heading: drawn bold */
+
+	/* the tree of a DNS, mDNS or LLMNR message m (mn bytes) below UDP, from IPv4 and IPv6 alike */
+static short DnsDetail(const UInt8 *m, long mn, UInt16 sp, UInt16 dp, char (*lines)[NC_DETAILLEN], short max, short nl)
+{
+	char *s;
+	long off = 12, u;
+	UInt16 i, qd, an;
+	char name[48];
+	H; StrCat(s, dp == 5353 || sp == 5353 ? "Multicast DNS" : dp == 5355 || sp == 5355 ? "LLMNR" : "DNS");
+	if (mn < 12) return nl;
+	qd = Get16(m + 4); an = Get16(m + 6);
+	L; StrCat(s, "  ID 0x"); CatHex(s, Get16(m), 4); StrCat(s, (m[2] & 0x80) ? "  response" : "  query");
+	StrCat(s, "  questions "); CatNum(s, qd); StrCat(s, "  answers "); CatNum(s, an);
+	for (i = 0; i < qd && i < 4; i++) {
+		u = DnsName(m, mn, off, name, sizeof(name));
+		if (u < 0 || off + u + 4 > mn) break;
+		L; StrCat(s, "  Q  "); StrCat(s, name); StrCat(s, "  "); StrCat(s, DnsType(Get16(m + off + u)));
+		off += u + 4;
+	}
+	for (i = 0; i < an && i < 6; i++) {
+		UInt16 ty, rl;
+		u = DnsName(m, mn, off, name, sizeof(name));
+		if (u < 0 || off + u + 10 > mn) break;
+		ty = Get16(m + off + u); rl = Get16(m + off + u + 8);
+		L; StrCat(s, "  A  "); StrCat(s, name); StrCat(s, "  "); StrCat(s, DnsType(ty));
+		if (ty == 1 && rl == 4 && off + u + 14 <= mn) { StrCat(s, "  "); CatIP4(s, m + off + u + 10); }
+		else if ((ty == 12 || ty == 5) && off + u + 10 + rl <= mn) {
+			char tgt[48];
+			if (DnsName(m, mn, off + u + 10, tgt, sizeof(tgt)) > 0) { L; StrCat(s, "      -> "); StrCat(s, tgt); }
+		}
+		off += u + 10 + rl;
+	}
+	return nl;
+}
+
 short NC_FrameDetail(const NCFrame *f, char (*lines)[NC_DETAILLEN], short max)
 {
 	const UInt8 *p = f->data;
 	long n = f->caplen;
 	short nl = 0;
 	char *s;
-#define L	(s = (nl < max ? lines[nl++] : lines[max - 1]), s[0] = 0, s)
-#define H	(s = L, StrCat(s, "\001"), s)							/* a heading: drawn bold */
 
 	H; StrCat(s, "Frame  "); CatNum(s, f->len); StrCat(s, " bytes, "); CatNum(s, f->caplen); StrCat(s, " kept");
 	L; StrCat(s, "  Arrival  +"); CatNum(s, f->us / 1000000UL); StrCat(s, ".");
@@ -365,36 +400,9 @@ short NC_FrameDetail(const NCFrame *f, char (*lines)[NC_DETAILLEN], short max)
 			UInt16 sp = Get16(t), dp = Get16(t + 2);
 			H; StrCat(s, "UDP");
 			L; StrCat(s, "  Ports  "); CatNum(s, sp); StrCat(s, " > "); CatNum(s, dp); StrCat(s, ", length "); CatNum(s, Get16(t + 4));
-			if (sp == 53 || dp == 53 || sp == 5353 || dp == 5353 || sp == 5355 || dp == 5355) {
-				const UInt8 *m = t + 8;
-				long mn = tn - 8, off = 12, u;
-				UInt16 i, qd, an;
-				char name[48];
-				H; StrCat(s, dp == 5353 || sp == 5353 ? "Multicast DNS" : dp == 5355 || sp == 5355 ? "LLMNR" : "DNS");
-				if (mn < 12) break;
-				qd = Get16(m + 4); an = Get16(m + 6);
-				L; StrCat(s, "  ID 0x"); CatHex(s, Get16(m), 4); StrCat(s, (m[2] & 0x80) ? "  response" : "  query");
-				StrCat(s, "  questions "); CatNum(s, qd); StrCat(s, "  answers "); CatNum(s, an);
-				for (i = 0; i < qd && i < 4; i++) {
-					u = DnsName(m, mn, off, name, sizeof(name));
-					if (u < 0 || off + u + 4 > mn) break;
-					L; StrCat(s, "  Q  "); StrCat(s, name); StrCat(s, "  "); StrCat(s, DnsType(Get16(m + off + u)));
-					off += u + 4;
-				}
-				for (i = 0; i < an && i < 6; i++) {
-					UInt16 ty, rl;
-					u = DnsName(m, mn, off, name, sizeof(name));
-					if (u < 0 || off + u + 10 > mn) break;
-					ty = Get16(m + off + u); rl = Get16(m + off + u + 8);
-					L; StrCat(s, "  A  "); StrCat(s, name); StrCat(s, "  "); StrCat(s, DnsType(ty));
-					if (ty == 1 && rl == 4 && off + u + 14 <= mn) { StrCat(s, "  "); CatIP4(s, m + off + u + 10); }
-					else if ((ty == 12 || ty == 5) && off + u + 10 + rl <= mn) {
-						char tgt[48];
-						if (DnsName(m, mn, off + u + 10, tgt, sizeof(tgt)) > 0) { L; StrCat(s, "      -> "); StrCat(s, tgt); }
-					}
-					off += u + 10 + rl;
-				}
-			} else if (sp == 67 || sp == 68) {
+			if (sp == 53 || dp == 53 || sp == 5353 || dp == 5353 || sp == 5355 || dp == 5355)
+				nl = DnsDetail(t + 8, tn - 8, sp, dp, lines, max, nl);
+			else if (sp == 67 || sp == 68) {
 				const UInt8 *m = t + 8, *o;
 				long mn = tn - 8;
 				short l, i;
@@ -436,8 +444,11 @@ short NC_FrameDetail(const NCFrame *f, char (*lines)[NC_DETAILLEN], short max)
 			if ((p[o] == 135 || p[o] == 136) && o + 24 <= n) { L; StrCat(s, "  Target  "); CatIP6(s, p + o + 8); }
 			if (p[o] == 134 && o + 16 <= n) { L; StrCat(s, "  Router lifetime "); CatNum(s, Get16(p + o + 6)); StrCat(s, " s"); }
 		} else if (nh == 17 && o + 8 <= n) {
+			UInt16 sp = Get16(p + o), dp = Get16(p + o + 2);
 			H; StrCat(s, "UDP");
-			L; StrCat(s, "  Ports  "); CatNum(s, Get16(p + o)); StrCat(s, " > "); CatNum(s, Get16(p + o + 2));
+			L; StrCat(s, "  Ports  "); CatNum(s, sp); StrCat(s, " > "); CatNum(s, dp); StrCat(s, ", length "); CatNum(s, Get16(p + o + 4));
+			if (sp == 53 || dp == 53 || sp == 5353 || dp == 5353 || sp == 5355 || dp == 5355)
+				nl = DnsDetail(p + o + 8, n - o - 8, sp, dp, lines, max, nl);
 		}
 		break;
 	}

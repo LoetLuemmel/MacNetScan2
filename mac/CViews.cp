@@ -857,8 +857,8 @@ void CFramesPane::Draw(Rect *area)
 	Rect r;
 	char lines[FP_LINES][NC_DETAILLEN], s[64];
 	const NCFrame *f = frameNo >= 0 ? NC_Frame(frameNo) : NULL;
-	short y, top, x, i, nl, hexX;
-	long off;
+	short y, top, x, i, nl, hexX, rows;
+	long off, shown;
 
 	TextMode(srcOr);
 	FrameToQDR(&frame, &r);
@@ -904,7 +904,9 @@ void CFramesPane::Draw(Rect *area)
 	RGBForeColor(&kStatusLn);									/* the bytes, right */
 	MoveTo((short) (hexX - 8), (short) (top + 6)); LineTo((short) (hexX - 8), (short) (r.bottom - 6));
 	TextFont(kMonaco); TextSize(9);
-	for (off = 0, y = (short) (top + 16); off < f->caplen && y < r.bottom - 4; off += 16, y += 11) {
+	rows = (short) ((r.bottom - 4 - (top + 16)) / 11 + 1);		/* what fits; the last says what does not */
+	if ((f->caplen + 15) / 16 > rows) shown = (long) (rows - 1) * 16; else shown = f->caplen;
+	for (off = 0, y = (short) (top + 16); off < shown; off += 16, y += 11) {
 		static const char hx[] = "0123456789abcdef";
 		short o = 0;
 		s[o++] = hx[(off >> 12) & 15]; s[o++] = hx[(off >> 8) & 15]; s[o++] = hx[(off >> 4) & 15]; s[o++] = hx[off & 15];
@@ -916,6 +918,11 @@ void CFramesPane::Draw(Rect *area)
 		}
 		s[o] = '\0';
 		RGBForeColor(&kInk);
+		MoveTo(hexX, y); DrawC(s);
+	}
+	if (shown < f->caplen) {
+		s[0] = '\0'; CCat(s, "      + "); CCatNum(s, f->caplen - shown); CCat(s, " bytes not shown");
+		RGBForeColor(&kInkSoft);
 		MoveTo(hexX, y); DrawC(s);
 	}
 	RGBForeColor(&kBlackC);
