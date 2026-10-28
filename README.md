@@ -29,8 +29,8 @@ Plus: **Export / Copy** of what the view shows, tab-delimited - the IP sweep (IP
 ```
 netcore/     the engine, plain C, all Open Transport (Start / Idle / result, nothing blocks);
              frames.c the dissector behind the Frames view (reads captured frames, no OT calls)
-mac/         the TCL application: CMain (window, tool strip, IP view), CViews (AppleTalk, Listen, Tools,
-             Map, Frames, About, Options), CApp; Look.h shared colours and helpers; Menus.r, Extras.r, Icons.r
+mac/         the TCL application: CMain (window, tool strip, IP view), CViews (Listen, Tools, Map,
+             Frames, About, Options), CATView (AppleTalk), CApp; Look.h shared colours and helpers; Menus.r, Extras.r, Icons.r
 mac/generated/  what Visual Architect generated, for reference
 mac/rsrc/    Visual Architect.rsrc and Project Resources.rsrc as MacBinary
 tools/       mkicons.py (Finder icons from a PNG), patch_otlibs.py (see below), mkotnames.py (OTNames.h)
@@ -41,15 +41,15 @@ original/    MacNetScan 1 (MPW, one C file)
 ## Building
 
 1. A Visual Architect project in Symantec C++ 7 (project model "Visual Architect Project"), Generate once.
-   Replace `Source:CMain.*`, `CApp.*` with the files in `mac/`, add `CViews.cp`, `Look.h`; Rez `Menus.r Extras.r
+   Replace `Source:CMain.*`, `CApp.*` with the files in `mac/`, add `CViews.cp`, `CATView.cp`, `Look.h`; Rez `Menus.r Extras.r
    Icons.r` into `Project Resources.rsrc` (or use the copy in `mac/rsrc/`).
 2. Add `netcore/netcore.c` (it includes `otstubs.c`), `netcore/frames.c` and the four Open Transport 68K libraries through the
    ".o Converter": `OpenTransport.o`, `OpenTransportApp.o`, `OpenTptInet.o`, `OpenTptATalk.o` - **patched** with
    `tools/patch_otlibs.py` first (the SDK's `Fail` and `FlushCache` collide with TCL's). The OT SDK headers go next
    to `netcore.c`; `OTCompat.h` and `OTNames.h` (MPW's upper-case pascal names) are here.
 3. Project type: **Far CODE**, partition 1500 K, creator `IPSc`. Segments: the OT libraries in one, `CViews.cp` in
-   another (24.7 K of 32 K), `netcore.c` alone in a third (18.3 K), `frames.c` alone in a fourth (13.1 K) - drag
-   each below the last segment in the project window. Nothing calls `UnloadSeg`, so the Open Transport notifiers in `netcore.c` stay resident.
+   another (23.3 K of 32 K), `netcore.c` alone in a third (23.6 K), `frames.c` in a fourth (14.1 K), `CATView.cp` in a
+   fifth (8.1 K) - drag each below the last segment in the project window. Nothing calls `UnloadSeg`, so the Open Transport notifiers in `netcore.c` stay resident.
 4. Build Application, then `SetFile -a B MacNetScan`.
 
 Why each step is there: the comments in `netcore/netcore.c`, `tools/patch_otlibs.py` and `probe/sniff_main.c`.

@@ -210,6 +210,7 @@ protected:
 	CTabBar		*tabs;
 	CLedPane	*actLed;
 	CATPane		*atPane;		// the AppleTalk, Listen and Tools views (CViews.cp)
+	CScrollPane	*atScroll;		// AppleTalk scrolls
 	CListenPane	*listenPane;
 	CMapPane	*mapPane;
 	CFramesPane	*framesPane;

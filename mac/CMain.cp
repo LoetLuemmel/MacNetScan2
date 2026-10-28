@@ -578,6 +578,7 @@ void CMain::ICMain()
 	tabs = NULL;
 	actLed = NULL;
 	atPane = NULL;
+	atScroll = NULL;
 	listenPane = NULL;
 	toolsPane = NULL;
 	hostField = NULL;
@@ -634,8 +635,11 @@ void CMain::MakeNewWindow()
 	actLed = new CLedPane(itsWindow, this, 16, kWinWidth - 52, 12, &kLedAct);
 	{															/* the other views, hidden	*/
 		short h = kWinHeight - kStripHeight - kStatusHeight;
-		atPane = new CATPane(itsWindow, this, kWinWidth, h, 0, kStripHeight);
-		atPane->Hide();
+		atScroll = new CScrollPane(itsWindow, this, kWinWidth, h, 0, kStripHeight,
+								   sizFIXEDLEFT, sizFIXEDTOP, FALSE, TRUE, FALSE);
+		atPane = new CATPane(atScroll, this, kWinWidth - 15, h, 0, 0);
+		atScroll->InstallPanorama(atPane);
+		atScroll->Hide();
 		listenPane = new CListenPane(itsWindow, this, kWinWidth, h, 0, kStripHeight);
 		listenPane->Hide();
 		mapPane = new CMapPane(itsWindow, this, kWinWidth, h, 0, kStripHeight);
@@ -947,12 +951,12 @@ void CMain::SetView(short aView)
 	view = aView;
 	tabs->SetCurrent(aView);
 	listHeader->Hide(); listScroll->Hide(); detail->Hide();
-	atPane->Hide(); listenPane->Hide(); mapPane->Hide(); framesPane->Hide(); frameScroll->Hide();
+	atScroll->Hide(); listenPane->Hide(); mapPane->Hide(); framesPane->Hide(); frameScroll->Hide();
 	toolsPane->Hide(); hostField->Hide(); pingBtn->Hide(); dnsBtn->Hide(); traceBtn->Hide();
 	if (aView == kViewIP) {
 		listHeader->Show(); listScroll->Show(); detail->Show();
 		hostList->Update();
-	} else if (aView == kViewAT) atPane->Show();
+	} else if (aView == kViewAT) atScroll->Show();
 	else if (aView == kViewListen) listenPane->Show();
 	else if (aView == kViewMap) mapPane->Show();
 	else if (aView == kViewFrames) { framesPane->Show(); frameScroll->Show(); frameList->Update(); }

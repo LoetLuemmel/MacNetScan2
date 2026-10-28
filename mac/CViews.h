@@ -14,17 +14,27 @@
 #include "CEditText.h"
 #include <QDOffscreen.h>
 
-	// AppleTalk: this Mac's node, then every NBP entity with a type LED.
-class CATPane : public CPane
+	// AppleTalk: this Mac's node, every NBP entity with a type LED and its echo, the mounted volumes - scrolled.
+	// A click on a device opens a box with what is known about it (an AFP server's status, its volumes).
+#define kATUnit		16								/* scroll step, pixels */
+class CATPane : public CPanorama
 {
 public:
 	CATPane(CView *anEnclosure, CBureaucrat *aSupervisor, short aWidth, short aHeight, short aHEncl, short aVEncl);
 
 	virtual	void	Draw(Rect *area);
+	virtual	void	DoClick(Point hitPt, short modifierKeys, long when);
+	virtual	void	Scroll(long hDelta, long vDelta, Boolean redraw);
 
 protected:
+	void			DrawBox(Rect *vis);
+	void			SetContentHeight(short h);
+
 	char			info[96];				// "Node 65280.117 ..." - read once, NC_ATInfo opens AppleTalk
 	unsigned long	infoTick;
+	short			sel;					// the selected entity, -1 none
+	short			listTop;				// content y of the first entity row's baseline
+	short			contentH;				// as last drawn
 };
 
 	// Listen: protocol meters, the stations seen, the event log.
