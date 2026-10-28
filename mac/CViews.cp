@@ -769,11 +769,12 @@ void CFrameList::Update()
 	rows = total < NC_MAXFRAMES ? total : NC_MAXFRAMES;
 	first = total - rows;
 	GetLengths(&w, &h);
-	b.left = 0; b.top = 0; b.right = w; b.bottom = rows;
-	SetBounds(&b);
-	if (itsScrollPane != NULL) itsScrollPane->AdjustScrollMax();
 	vis = h / kFrameRow;										/* follow the newest */
 	pos.h = 0; pos.v = rows > vis ? rows - vis : 0;
+	if (pos.v < position.v) ScrollTo(&pos, FALSE);				/* shrinking (a new capture): back up first, */
+	b.left = 0; b.top = 0; b.right = w; b.bottom = rows;		/* SetBounds asserts position.v <= bottom	 */
+	SetBounds(&b);
+	if (itsScrollPane != NULL) itsScrollPane->AdjustScrollMax();
 	ScrollTo(&pos, FALSE);
 	if (itsScrollPane != NULL) itsScrollPane->Calibrate();
 	Refresh();
