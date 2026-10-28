@@ -551,3 +551,51 @@ long NC_PcapRecord(const NCFrame *f, unsigned char *b)
 	for (i = 0; i < f->caplen; i++) b[32 + i] = f->data[i];
 	return 32 + f->caplen;
 }
+
+/* ------------------------------------------------------------------ a frame as text, for Copy */
+
+#define CR		"\015"
+
+static void Put(char *buf, long *o, long max, const char *s)
+{
+	while (*s && *o < max) buf[(*o)++] = *s++;
+}
+
+long NC_FrameText(const NCFrame *f, long no, char *buf, long max)
+{
+	static const char hx[] = "0123456789abcdef";
+	char src[48], dst[48], proto[16], info[96], t[64];
+	char lines[40][NC_DETAILLEN];
+	long o = 0, off;
+	short nl, i, x, k;
+	unsigned long u;
+
+	NC_FrameSummary(f, src, dst, proto, info);
+	Put(buf, &o, max, "No.\tTime\tSource\tDestination\tProtocol\tLength\tInfo" CR);
+	t[0] = 0; CatNum(t, (unsigned long) no); Put(buf, &o, max, t); Put(buf, &o, max, "\t");
+	t[0] = 0; CatNum(t, f->us / 1000000UL); StrCat(t, ".");
+	u = f->us % 1000000UL;
+	{ char d[8]; for (k = 5; k >= 0; k--) { d[k] = (char) ('0' + u % 10); u /= 10; } d[6] = 0; StrCat(t, d); }
+	Put(buf, &o, max, t); Put(buf, &o, max, "\t");
+	Put(buf, &o, max, src); Put(buf, &o, max, "\t"); Put(buf, &o, max, dst); Put(buf, &o, max, "\t");
+	Put(buf, &o, max, proto); Put(buf, &o, max, "\t");
+	t[0] = 0; CatNum(t, (unsigned long) f->len); Put(buf, &o, max, t); Put(buf, &o, max, "\t");
+	Put(buf, &o, max, info); Put(buf, &o, max, CR CR);
+
+	nl = NC_FrameDetail(f, lines, 40);							/* the tree; headings lose their bold mark */
+	for (i = 0; i < nl; i++) { Put(buf, &o, max, lines[i][0] == '\001' ? lines[i] + 1 : lines[i]); Put(buf, &o, max, CR); }
+	Put(buf, &o, max, CR);
+
+	for (off = 0; off < f->caplen; off += 16) {					/* the bytes, as the pane shows them */
+		k = 0;
+		t[k++] = hx[(off >> 12) & 15]; t[k++] = hx[(off >> 8) & 15]; t[k++] = hx[(off >> 4) & 15]; t[k++] = hx[off & 15];
+		t[k++] = ' ';
+		for (x = 0; x < 16 && off + x < f->caplen; x++) {
+			if (x == 8) t[k++] = ' ';
+			t[k++] = ' '; t[k++] = hx[f->data[off + x] >> 4]; t[k++] = hx[f->data[off + x] & 15];
+		}
+		t[k] = 0;
+		Put(buf, &o, max, t); Put(buf, &o, max, CR);
+	}
+	return o;
+}

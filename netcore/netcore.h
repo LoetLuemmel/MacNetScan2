@@ -64,6 +64,8 @@ const NCHost *NC_Host(short i);					/* ordered by address */
 long		NC_ChangeCount(void);					/* grows whenever results change: redraw when it moved */
 long		NC_ActivityCount(void);					/* grows with every answer: the ACT LED */
 long		NC_BuildReport(char *buf, long max);	/* tab-delimited, CR line ends */
+long		NC_BuildListenReport(char *buf, long max);	/* Listen: counters, stations, events; the same form */
+long		NC_BuildATReport(char *buf, long max);		/* AppleTalk: this Mac's node, the NBP entities */
 
 /* ---- AppleTalk ---- */
 typedef struct {
@@ -179,6 +181,7 @@ short		NC_FrameDetail(const NCFrame *f, char (*lines)[NC_DETAILLEN], short max);
 unsigned long NC_FrameEpoch(void);				/* when the capture began, Unix seconds (UTC) */
 long		NC_PcapHeader(unsigned char *b);		/* the file header: 24 bytes */
 long		NC_PcapRecord(const NCFrame *f, unsigned char *b);	/* one frame, at most NC_PCAPREC bytes */
+long		NC_FrameText(const NCFrame *f, long no, char *buf, long max);	/* list line, tree, bytes: for Copy */
 void		NC_MACToStr(const unsigned char *mac, char *out);	/* "00:0c:6c:0b:0e:ad" */
 #define NC_MAXEVENTS	64
 

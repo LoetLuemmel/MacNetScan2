@@ -777,6 +777,30 @@ void CMain::Pump(long *maxSleep)
 }
 
 
+static long gSelFrame = -1;							// the frame Frames' Copy copies, -1 none
+
+	// What Export and Copy hand out in each view: Frames a pcap file and the selected frame, Listen and Map the
+	// stations and events, AppleTalk the NBP entities, IP Network and Tools the sweep.
+static long BuildViewReport(short aView, char *buf, long max)
+{
+	const NCFrame *f;
+	if (aView == kViewFrames)
+		return (gSelFrame >= 0 && (f = NC_Frame(gSelFrame)) != NULL) ? NC_FrameText(f, gSelFrame + 1, buf, max) : 0;
+	if (aView == kViewListen || aView == kViewMap) return NC_BuildListenReport(buf, max);
+	if (aView == kViewAT) return NC_BuildATReport(buf, max);
+	return NC_BuildReport(buf, max);
+}
+
+static void ReportState(short aView, Boolean *canExport, Boolean *canCopy)
+{
+	if (aView == kViewFrames) {
+		*canExport = (Boolean) (NC_FrameTotal() > 0);
+		*canCopy = (Boolean) (gSelFrame >= 0 && NC_Frame(gSelFrame) != NULL);
+	} else if (aView == kViewListen || aView == kViewMap) *canExport = *canCopy = (Boolean) (NC_StationCount() > 0);
+	else if (aView == kViewAT) *canExport = *canCopy = (Boolean) (NC_EntityCount() > 0);
+	else *canExport = *canCopy = (Boolean) (NC_HostCount() > 0);
+}
+
 void CMain::HostSelected(unsigned long anIP)
 {
 	detail->SetHost(anIP);
@@ -784,7 +808,9 @@ void CMain::HostSelected(unsigned long anIP)
 
 void CMain::FrameSelected(long aFrame)
 {
+	gSelFrame = aFrame;
 	framesPane->SetFrame(aFrame);
+	ShowStatus();											/* Copy follows the selection */
 }
 
 
@@ -806,6 +832,7 @@ void CMain::StartScan()
 		if (NC_ListenStart() != 0) SysBeep(1);
 		frameList->Restart();
 		framesPane->SetFrame(-1);
+		gSelFrame = -1;
 		if (view == kViewMap) mapPane->Refresh(); else if (view == kViewListen) listenPane->Refresh();
 		ShowStatus();
 		return;
@@ -895,8 +922,10 @@ void CMain::ShowStatus()
 	if (scanBtn != NULL) {
 		scanBtn->SetActive((Boolean) (netOK && idle));
 		stopBtn->SetActive((Boolean) !idle);
-		exportBtn->SetActive((Boolean) (view == kViewFrames ? NC_FrameTotal() > 0 : n > 0));	/* Frames: pcap */
-		copyBtn->SetActive((Boolean) (view != kViewFrames && n > 0));
+		Boolean canExport, canCopy;
+		ReportState(view, &canExport, &canCopy);
+		exportBtn->SetActive(canExport);
+		copyBtn->SetActive(canCopy);
 	}
 	if (pingBtn != NULL) {								/* the running tool's button stays down */
 		short t = NC_ToolState();
@@ -958,7 +987,8 @@ void CMain::CopyReport()
 	Ptr buf = NewPtr(kReportMax);
 	long n;
 	if (buf == NULL) { SysBeep(1); return; }
-	n = NC_BuildReport(buf, kReportMax);
+	n = BuildViewReport(view, buf, kReportMax);
+	if (n == 0) { SysBeep(1); DisposePtr(buf); return; }
 	ZeroScrap();
 	PutScrap(n, 'TEXT', buf);
 	DisposePtr(buf);
@@ -972,11 +1002,12 @@ void CMain::ExportReport()
 	short ref;
 	OSErr err;
 
-	StandardPutFile("\pSave the scan report as:", "\pMacNetScan Report", &reply);
+	StandardPutFile("\pSave the report as:", view == kViewListen || view == kViewMap ? "\pMacNetScan Listen" :
+					view == kViewAT ? "\pMacNetScan AppleTalk" : "\pMacNetScan Report", &reply);
 	if (!reply.sfGood) return;
 	buf = NewPtr(kReportMax);
 	if (buf == NULL) { SysBeep(1); return; }
-	n = NC_BuildReport(buf, kReportMax);
+	n = BuildViewReport(view, buf, kReportMax);
 	err = FSpCreate(&reply.sfFile, 'ttxt', 'TEXT', reply.sfScript);
 	if (err == dupFNErr) err = noErr;
 	if (err == noErr) err = FSpOpenDF(&reply.sfFile, fsRdWrPerm, &ref);
@@ -1054,11 +1085,11 @@ void CMain::UpdateMenus()
 	if (netOK && !Busy()) gBartender->EnableCmd(cmdScanStart);
 	if (Busy()) gBartender->EnableCmd(cmdScanStop);
 	else gBartender->EnableCmd(cmdOptions);
-	if (view == kViewFrames) {
-		if (NC_FrameTotal() > 0) gBartender->EnableCmd(cmdExport);
-	} else if (NC_HostCount() > 0) {
-		gBartender->EnableCmd(cmdExport);
-		gBartender->EnableCmd(cmdCopyReport);
+	{
+		Boolean canExport, canCopy;
+		ReportState(view, &canExport, &canCopy);
+		if (canExport) gBartender->EnableCmd(cmdExport);
+		if (canCopy) gBartender->EnableCmd(cmdCopyReport);
 	}
 	for (i = 0; i < kViewCount; i++) {
 		gBartender->EnableCmd(cmdViewIP + i);

@@ -1670,6 +1670,68 @@ const char *NC_EventLine(long i)
 
 /* ------------------------------------------------------------------ shutdown */
 
+	/* the Listen view as text: what the meters counted, the stations, the events kept */
+long NC_BuildListenReport(char *buf, long max)
+{
+	long o = 0, i, first;
+	short k;
+	char nb[16], t[24];
+	unsigned long now = TickCount();
+	App(buf, &o, max, "MacNetScan Listen  stations="); UToStr((unsigned long) gNStations, nb); App(buf, &o, max, nb);
+	App(buf, &o, max, "  packets="); UToStr((unsigned long) gLs.total, nb); App(buf, &o, max, nb);
+	App(buf, &o, max, CR "ARP\tBroadcast\tMulticast\tDHCP\tNetBIOS\tIPv6\tLLDP\tAppleTalk\tAARP" CR);
+	{
+		long v[9];
+		v[0] = gLs.arp; v[1] = gLs.ipBroadcast; v[2] = gLs.ipMulticast; v[3] = gLs.dhcp; v[4] = gLs.netbios;
+		v[5] = gLs.ipv6; v[6] = gLs.lldp; v[7] = gLs.ddp; v[8] = gLs.aarp;
+		for (k = 0; k < 9; k++) { UToStr((unsigned long) v[k], nb); App(buf, &o, max, nb); App(buf, &o, max, k < 8 ? "\t" : CR); }
+	}
+	App(buf, &o, max, CR "MAC\tIP\tAppleTalk\tLLDP name\tHeard\tPackets\tLast heard (s ago)" CR);
+	for (i = 0; gStations && i < gNStations; i++) {
+		const NCStation *st = &gStations[i];
+		NC_MACToStr(st->mac, t); App(buf, &o, max, t); App(buf, &o, max, "\t");
+		if (st->ip) { NC_IPToStr(st->ip, t); App(buf, &o, max, t); }
+		App(buf, &o, max, "\t");
+		if (st->atNet) { UToStr(st->atNet, nb); App(buf, &o, max, nb); App(buf, &o, max, "."); UToStr(st->atNode, nb); App(buf, &o, max, nb); }
+		App(buf, &o, max, "\t"); App(buf, &o, max, st->name); App(buf, &o, max, "\t");
+		if (st->seen & NC_SEEN_SELF) App(buf, &o, max, "this Mac ");
+		if (st->seen & NC_SEEN_ARP) App(buf, &o, max, "ARP ");
+		if (st->seen & NC_SEEN_IP) App(buf, &o, max, "IP ");
+		if (st->seen & NC_SEEN_IP6) App(buf, &o, max, "IPv6 ");
+		if (st->seen & NC_SEEN_LLDP) App(buf, &o, max, "LLDP ");
+		if (st->seen & NC_SEEN_AT) App(buf, &o, max, "AppleTalk");
+		App(buf, &o, max, "\t"); UToStr((unsigned long) st->packets, nb); App(buf, &o, max, nb);
+		App(buf, &o, max, "\t"); UToStr((now - st->lastTick) / TICKS_PER_SEC, nb); App(buf, &o, max, nb);
+		App(buf, &o, max, CR);
+	}
+	App(buf, &o, max, CR "Events (seconds since Scan)" CR);
+	first = gNEvents > NC_MAXEVENTS ? gNEvents - NC_MAXEVENTS : 0;
+	for (i = first; i < gNEvents; i++) { App(buf, &o, max, NC_EventLine(i)); App(buf, &o, max, CR); }
+	return o;
+}
+
+	/* the AppleTalk view as text: this Mac's node and zone, then every NBP entity found */
+long NC_BuildATReport(char *buf, long max)
+{
+	long o = 0;
+	short i;
+	char nb[16];
+	NCATInfo ai;
+	App(buf, &o, max, "MacNetScan AppleTalk  entities="); UToStr((unsigned long) gNEnt, nb); App(buf, &o, max, nb); App(buf, &o, max, CR);
+	if (NC_ATInfo(&ai) == noErr) {
+		App(buf, &o, max, "This Mac\t"); App(buf, &o, max, ai.address);
+		App(buf, &o, max, "\tzone "); App(buf, &o, max, ai.zone[0] ? ai.zone : "*");
+		if (ai.router[0]) { App(buf, &o, max, "\trouter "); App(buf, &o, max, ai.router); }
+		App(buf, &o, max, ai.isExtended ? "\textended network" CR : "\tLocalTalk-style network" CR);
+	}
+	App(buf, &o, max, CR "Object\tType\tZone\tAddress" CR);
+	for (i = 0; gEnt && i < gNEnt; i++) {
+		App(buf, &o, max, gEnt[i].object); App(buf, &o, max, "\t"); App(buf, &o, max, gEnt[i].type); App(buf, &o, max, "\t");
+		App(buf, &o, max, gEnt[i].zone); App(buf, &o, max, "\t"); App(buf, &o, max, gEnt[i].address); App(buf, &o, max, CR);
+	}
+	return o;
+}
+
 void NC_Shutdown(void)
 {
 	short i;
