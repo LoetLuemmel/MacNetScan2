@@ -307,6 +307,104 @@ void CATPane::Draw(Rect *area)
 		y += 14;
 	}
 
+	{															/* the AppleTalk traffic Listen has heard */
+		NCATTraffic tr;
+		long total = 0, totalB = 0;
+		short k, j;
+		char s[96], t[40];
+		NC_ATTraffic(&tr);
+		for (k = 0; k < NC_ATT_COUNT; k++) { total += tr.type[k].packets; totalB += tr.type[k].bytes; }
+		y += 16;
+		s[0] = '\0'; CCat(s, "Traffic heard");
+		if (total > 0) {
+			CCat(s, "   "); CCatNum(s, total); CCat(s, " packets in ");
+			CCatNum(s, (long) ((tr.lastTick - tr.firstTick) / 60)); CCat(s, " s");
+		}
+		SectionTitle((short) (r.left + 30), y, s);
+		SectionTitle((short) (r.left + 260), y, "Packets");
+		SectionTitle((short) (r.left + 340), y, "Bytes");
+		SectionTitle((short) (r.left + 420), y, "Size min/avg/max");
+		SectionTitle((short) (r.left + 560), y, "Share of bytes");
+		RGBForeColor(&kStatusLn);
+		MoveTo((short) (r.left + 8), (short) (y + 5)); LineTo((short) (r.right - 8), (short) (y + 5));
+		y += 22;
+		if (total == 0) {
+			RGBForeColor(&kInkSoft);
+			MoveTo((short) (r.left + 30), y);
+			DrawC("Nothing counted yet - Scan in Listen, Map or Frames counts what AppleTalk sends.");
+			y += 18;
+		} else {
+			for (k = 0; k < NC_ATT_COUNT; k++) {				/* per protocol */
+				const NCATCount *c = &tr.type[k];
+				Rect bar;
+				short share;
+				if (c->packets == 0) continue;
+				if (y - 13 <= vis.bottom && y + 5 >= vis.top) {
+					RGBForeColor(&kInk);
+					MoveTo((short) (r.left + 30), y); DrawC(NC_ATTypeName(k));
+					s[0] = '\0'; CCatNum(s, c->packets); MoveTo((short) (r.left + 260), y); DrawC(s);
+					s[0] = '\0'; CCatNum(s, c->bytes); MoveTo((short) (r.left + 340), y); DrawC(s);
+					RGBForeColor(&kInkSoft);
+					s[0] = '\0'; CCatNum(s, c->minLen); CCat(s, " / "); CCatNum(s, c->bytes / c->packets);
+					CCat(s, " / "); CCatNum(s, c->maxLen);
+					MoveTo((short) (r.left + 420), y); DrawC(s);
+					share = (short) (totalB > 0 ? c->bytes * 100 / totalB : 0);
+					SetRect(&bar, (short) (r.left + 560), (short) (y - 8), (short) (r.left + 660), (short) (y - 1));
+					RGBForeColor(&kBarTrack); PaintRect(&bar);
+					bar.right = (short) (bar.left + share);
+					RGBForeColor(&kBarFill); PaintRect(&bar);
+					s[0] = '\0'; CCatNum(s, share); CCat(s, " %");
+					RGBForeColor(&kInkSoft);
+					MoveTo((short) (r.left + 666), y); DrawC(s);
+				}
+				y += 16;
+			}
+			if (y - 13 <= vis.bottom && y + 5 >= vis.top) {	/* how big the packets are */
+				static const char *kSize[NC_ATSIZES] = { "< 64", "64-127", "128-255", "256-511", "512+" };
+				RGBForeColor(&kInkSoft);
+				MoveTo((short) (r.left + 30), y); DrawC("Packet sizes");
+				for (k = 0; k < NC_ATSIZES; k++) {
+					s[0] = '\0'; CCat(s, kSize[k]); CCat(s, ":  "); CCatNum(s, tr.sizes[k]);
+					MoveTo((short) (r.left + 260 + k * 92), y); DrawC(s);
+				}
+			}
+			y += 26;
+			SectionTitle((short) (r.left + 30), y, "Sender");
+			SectionTitle((short) (r.left + 260), y, "Packets");
+			SectionTitle((short) (r.left + 340), y, "Bytes");
+			SectionTitle((short) (r.left + 420), y, "Avg size");
+			SectionTitle((short) (r.left + 500), y, "Protocols");
+			SectionTitle((short) (r.left + 640), y, "Last heard");
+			RGBForeColor(&kStatusLn);
+			MoveTo((short) (r.left + 8), (short) (y + 5)); LineTo((short) (r.right - 8), (short) (y + 5));
+			y += 22;
+			for (i = 0; i < NC_ATNodeCount(); i++) {			/* per sending node */
+				const NCATNode *a = NC_ATNode(i);
+				if (a == NULL) break;
+				if (y - 13 <= vis.bottom && y + 5 >= vis.top) {
+					s[0] = '\0'; CCatNum(s, a->net); CCat(s, "."); CCatNum(s, a->node);
+					for (j = 0; j < NC_EntityCount(); j++) {		/* its NBP name, if the lookup found one */
+						const NCEntity *e = NC_Entity(j);
+						if (e && e->net == a->net && e->node == a->node) { CCat(s, "  "); CCat(s, e->object); break; }
+					}
+					RGBForeColor(&kInk);
+					MoveTo((short) (r.left + 30), y); DrawTrunc(s, 220);
+					s[0] = '\0'; CCatNum(s, a->c.packets); MoveTo((short) (r.left + 260), y); DrawC(s);
+					s[0] = '\0'; CCatNum(s, a->c.bytes); MoveTo((short) (r.left + 340), y); DrawC(s);
+					RGBForeColor(&kInkSoft);
+					s[0] = '\0'; CCatNum(s, a->c.bytes / a->c.packets); MoveTo((short) (r.left + 420), y); DrawC(s);
+					s[0] = '\0';
+					for (k = 0; k < NC_ATT_COUNT; k++)
+						if (a->types & (1 << k)) { if (s[0]) CCat(s, " "); CCat(s, NC_ATTypeName(k)); }
+					MoveTo((short) (r.left + 500), y); DrawTrunc(s, 134);
+					t[0] = '\0'; CCatNum(t, (long) ((TickCount() - a->lastTick) / 60)); CCat(t, " s ago");
+					MoveTo((short) (r.left + 640), y); DrawC(t);
+				}
+				y += 16;
+			}
+		}
+	}
+
 	n = NC_VolumeCount();										/* the mounted volumes, AppleShare first */
 	y += 16;
 	{

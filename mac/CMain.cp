@@ -760,6 +760,10 @@ void CMain::Pump(long *maxSleep)
 		listenPane->Pulse();								/* the meter LEDs, every slice	*/
 		if (now - lastDraw > 120) { lastDraw = now; listenPane->Refresh(); }	/* "s ago", packets */
 	}
+	if (view == kViewAT && NC_Listening() && now - lastDraw > 120) {	/* the traffic counts: every 2 s */
+		lastDraw = now;
+		atPane->Refresh();
+	}
 	if (view == kViewMap && NC_Listening() && now - lastDraw > 120) {	/* the map: redrawn every 2 s */
 		lastDraw = now;
 		mapPane->Update();									/* offscreen, then copied: no flicker */

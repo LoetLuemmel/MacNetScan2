@@ -1721,10 +1721,68 @@ static void LsIp(const UInt8 *mac, const UInt8 *p, long n)
 	}
 }
 
+	/* AppleTalk traffic: what each DDP type and each sending node amounts to */
+#define AT_NODES	32
+static NCATTraffic	gATT;
+static NCATNode		gATN[AT_NODES];
+static short		gNATN = 0;
+
+static void ATCount(NCATCount *c, short len)
+{
+	c->packets++;
+	c->bytes += len;
+	if (c->minLen == 0 || len < c->minLen) c->minLen = len;
+	if (len > c->maxLen) c->maxLen = len;
+}
+
+static void ATTraffic(UInt16 net, UInt8 node, short type, short len)
+{
+	short i;
+	unsigned long now = TickCount();
+	ATCount(&gATT.type[type], len);
+	gATT.sizes[len < 64 ? 0 : len < 128 ? 1 : len < 256 ? 2 : len < 512 ? 3 : 4]++;
+	if (gATT.firstTick == 0) gATT.firstTick = now;
+	gATT.lastTick = now;
+	if (net == 0 && node == 0) return;
+	for (i = 0; i < gNATN; i++) if (gATN[i].net == net && gATN[i].node == node) break;
+	if (i == gNATN) {
+		if (gNATN >= AT_NODES) return;
+		OTMemzero(&gATN[i], sizeof(NCATNode));
+		gATN[i].net = net; gATN[i].node = node;
+		gNATN++;
+	}
+	gATN[i].types |= (UInt8) (1 << type);
+	ATCount(&gATN[i].c, len);
+	gATN[i].lastTick = now;
+}
+
+void NC_ATTraffic(NCATTraffic *t) { *t = gATT; }
+short NC_ATNodeCount(void) { return gNATN; }
+const NCATNode *NC_ATNode(short i) { return (i >= 0 && i < gNATN) ? &gATN[i] : NULL; }
+const char *NC_ATTypeName(short type)
+{
+	static const char *kName[NC_ATT_COUNT] = { "RTMP", "NBP", "ATP", "AEP", "ZIP", "ADSP", "DDP other", "AARP" };
+	return (type >= 0 && type < NC_ATT_COUNT) ? kName[type] : "?";
+}
+
 static void LsDdp(const UInt8 *mac, const UInt8 *p, long n)
 {
 	NCStation *st;
 	gLs.ddp++;
+	if (n >= 13) {										/* DDP type 12; the datagram's length in 0-1 */
+		short len = (short) (((p[0] & 3) << 8) | p[1]), t;
+		if (len == 0 || len > n) len = (short) n;
+		switch (p[12]) {
+			case 1: case 5:	t = NC_ATT_RTMP; break;
+			case 2:			t = NC_ATT_NBP; break;
+			case 3:			t = NC_ATT_ATP; break;
+			case 4:			t = NC_ATT_AEP; break;
+			case 6:			t = NC_ATT_ZIP; break;
+			case 7:			t = NC_ATT_ADSP; break;
+			default:		t = NC_ATT_OTHER; break;
+		}
+		ATTraffic((UInt16) ((p[6] << 8) | p[7]), p[9], t, len);
+	}
 	st = LsStation(mac);
 	LsTouch(st, NC_SEEN_AT);
 	LsEdge(st, NC_TO_ATALK, 0);
@@ -1739,6 +1797,7 @@ static void LsAarp(const UInt8 *mac, const UInt8 *p, long n)
 	NCStation *st;
 	gLs.aarp++;
 	if (n < 18) return;
+	ATTraffic((UInt16) ((p[15] << 8) | p[16]), p[17], NC_ATT_AARP, (short) n);
 	st = LsStation(p + 8);								/* sender hardware address; protocol address: 0, net, node */
 	LsTouch(st, NC_SEEN_AT);
 	LsEdge(st, NC_TO_ATALK, 0);
@@ -2014,6 +2073,29 @@ long NC_BuildATReport(char *buf, long max)
 		App(buf, &o, max, gEnt[i].zone); App(buf, &o, max, "\t"); App(buf, &o, max, gEnt[i].address); App(buf, &o, max, "\t");
 		if (gEnt[i].rttUs != -2) { NC_RttToStr(gEnt[i].rttUs, nb); App(buf, &o, max, nb); }
 		App(buf, &o, max, "\t"); App(buf, &o, max, gEnt[i].info); App(buf, &o, max, CR);
+	}
+	if (gATT.firstTick) {
+		short k;
+		App(buf, &o, max, CR "Protocol\tPackets\tBytes\tMin\tMax" CR);
+		for (k = 0; k < NC_ATT_COUNT; k++) {
+			const NCATCount *c = &gATT.type[k];
+			if (c->packets == 0) continue;
+			App(buf, &o, max, NC_ATTypeName(k));
+			App(buf, &o, max, "\t"); UToStr((unsigned long) c->packets, nb); App(buf, &o, max, nb);
+			App(buf, &o, max, "\t"); UToStr((unsigned long) c->bytes, nb); App(buf, &o, max, nb);
+			App(buf, &o, max, "\t"); UToStr((unsigned long) c->minLen, nb); App(buf, &o, max, nb);
+			App(buf, &o, max, "\t"); UToStr((unsigned long) c->maxLen, nb); App(buf, &o, max, nb); App(buf, &o, max, CR);
+		}
+		App(buf, &o, max, CR "Node\tPackets\tBytes\tProtocols" CR);
+		for (i = 0; i < gNATN; i++) {
+			UToStr(gATN[i].net, nb); App(buf, &o, max, nb); App(buf, &o, max, ".");
+			UToStr(gATN[i].node, nb); App(buf, &o, max, nb);
+			App(buf, &o, max, "\t"); UToStr((unsigned long) gATN[i].c.packets, nb); App(buf, &o, max, nb);
+			App(buf, &o, max, "\t"); UToStr((unsigned long) gATN[i].c.bytes, nb); App(buf, &o, max, nb); App(buf, &o, max, "\t");
+			for (k = 0; k < NC_ATT_COUNT; k++)
+				if (gATN[i].types & (1 << k)) { App(buf, &o, max, NC_ATTypeName(k)); App(buf, &o, max, " "); }
+			App(buf, &o, max, CR);
+		}
 	}
 	NC_VolumeRead();
 	App(buf, &o, max, CR "Volume\tServer\tSize KB\tFree KB" CR);

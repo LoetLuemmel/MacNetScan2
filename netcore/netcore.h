@@ -107,6 +107,31 @@ void		NC_VolumeRead(void);					/* the mounted volumes: asks the File Manager (an
 short		NC_VolumeCount(void);					/* as last read */
 const NCVolume *NC_Volume(short i);
 
+	/* AppleTalk traffic, counted from what Listen hears: per DDP type, per packet size, per sending node. The
+	   size is the DDP datagram's (header included); AARP counts its packet. Kept across captures. */
+enum { NC_ATT_RTMP, NC_ATT_NBP, NC_ATT_ATP, NC_ATT_AEP, NC_ATT_ZIP, NC_ATT_ADSP, NC_ATT_OTHER, NC_ATT_AARP,
+	   NC_ATT_COUNT };
+typedef struct {
+	long			packets, bytes;
+	short			minLen, maxLen;
+} NCATCount;
+typedef struct {
+	unsigned short	net;
+	unsigned char	node, types;			/* types: a bit per NC_ATT_ */
+	NCATCount		c;
+	unsigned long	lastTick;
+} NCATNode;
+#define NC_ATSIZES	5						/* < 64, < 128, < 256, < 512, the rest */
+typedef struct {
+	NCATCount		type[NC_ATT_COUNT];
+	long			sizes[NC_ATSIZES];
+	unsigned long	firstTick, lastTick;
+} NCATTraffic;
+void		NC_ATTraffic(NCATTraffic *t);
+const char *NC_ATTypeName(short type);			/* "RTMP", "NBP", ... */
+short		NC_ATNodeCount(void);
+const NCATNode *NC_ATNode(short i);
+
 /* ---- tools: ping (TCP), DNS, traceroute (ICMP) ---- */
 enum { NC_TOOL_IDLE = 0, NC_TOOL_RESOLVING, NC_TOOL_RUNNING, NC_TOOL_DONE, NC_TOOL_FAILED };
 
