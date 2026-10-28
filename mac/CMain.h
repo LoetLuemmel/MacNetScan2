@@ -33,11 +33,12 @@ class CMain;
 #define cmdViewAT		611L	/*            AppleTalk				*/
 #define cmdViewListen	612L	/*            Listen				*/
 #define cmdViewTools	613L	/*            Tools					*/
+#define cmdViewMap		614L	/*            Map					*/
 #define cmdToolPing		620L	/* Tools view buttons				*/
 #define cmdToolDns		621L
 #define cmdToolTrace	622L
 
-enum { kViewIP = 0, kViewAT, kViewListen, kViewTools, kViewCount };
+enum { kViewIP = 0, kViewAT, kViewListen, kViewTools, kViewMap, kViewCount };
 
 	// A button of the tool strip: an icon drawn in QuickDraw, a label under it.
 enum { kIconScan, kIconStop, kIconExport, kIconCopy };
@@ -207,6 +208,7 @@ protected:
 	CLedPane	*actLed;
 	CATPane		*atPane;		// the AppleTalk, Listen and Tools views (CViews.cp)
 	CListenPane	*listenPane;
+	CMapPane	*mapPane;
 	CToolsPane	*toolsPane;
 	CHostField	*hostField;
 	CLightButton *pingBtn, *dnsBtn, *traceBtn;

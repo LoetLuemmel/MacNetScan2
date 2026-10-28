@@ -51,7 +51,7 @@ static const RGBColor kRttSlow   = { 0xF000, 0x6000, 0x2000 };
 static const RGBColor kWhiteC    = { 0xFFFF, 0xFFFF, 0xFFFF };
 static const RGBColor kBlackC    = { 0x0000, 0x0000, 0x0000 };
 
-static const char *kViewName[kViewCount] = { "IP Network", "AppleTalk", "Listen", "Tools" };
+static const char *kViewName[kViewCount] = { "IP Network", "AppleTalk", "Listen", "Tools", "Map" };
 
 	// The services: a short column title and an LED colour per known port.
 typedef struct { unsigned short port; const char *shortName; RGBColor colour; } SvcLook;

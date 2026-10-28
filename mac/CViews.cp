@@ -327,6 +327,228 @@ void CListenPane::Draw(Rect *area)
 }
 
 /******************************************************************************
+ CMapPane - who sends to whom
+
+ ******************************************************************************/
+
+#define MAP_STATIONS	20									/* the busiest stations on the outer ring		*/
+#define MAP_OUTER		26									/* and addresses only ever seen as destinations	*/
+
+static const char *kGroupName[NC_TO_COUNT] = { "Unicast", "Broadcast", "mDNS", "IPv6 multicast", "LLDP",
+											   "Multicast", "AppleTalk" };
+static const RGBColor kMcOther = { 0x9000, 0x9000, 0xA000 };
+static const RGBColor *kEdgeColour[NC_TO_COUNT] = { &kInkSoft, &kMeterColour[1], &kMeterColour[2], &kMeterColour[5],
+													&kMeterColour[6], &kMcOther, &kMeterColour[7] };
+static const short kSin16[17] = { 0, 98, 195, 290, 383, 471, 556, 634, 707, 773, 831, 882, 924, 957, 981, 995, 1000 };
+
+static short SinStep(short a)									/* a in 64ths of a turn; thousandths	*/
+{
+	short r = (short) (a & 15);
+	switch ((a & 63) >> 4) {
+		case 0:  return kSin16[r];
+		case 1:  return kSin16[16 - r];
+		case 2:  return (short) -kSin16[r];
+	}
+	return (short) -kSin16[16 - r];
+}
+
+static void RingPoint(short i, short n, short cx, short cy, short rx, short ry, Point *pt)	/* i of n, from the top */
+{
+	short a = (short) (i * 64 / n);
+	pt->h = (short) (cx + (long) rx * SinStep(a) / 1000);
+	pt->v = (short) (cy - (long) ry * SinStep((short) (a + 16)) / 1000);
+}
+
+CMapPane::CMapPane(CView *anEnclosure, CBureaucrat *aSupervisor, short aWidth, short aHeight,
+				   short aHEncl, short aVEncl)
+	: CPane(anEnclosure, aSupervisor, aWidth, aHeight, aHEncl, aVEncl, sizELASTIC, sizELASTIC)
+{
+	offscreen = NULL;
+}
+
+CMapPane::~CMapPane()
+{
+	if (offscreen != NULL) DisposeGWorld(offscreen);
+}
+
+void CMapPane::Update()
+{
+	if (!ReallyVisible()) return;
+	Prepare();
+	Draw(NULL);
+}
+
+	/* into the GWorld, then one CopyBits: a redraw replaces the picture instead of wiping and repainting it */
+void CMapPane::Draw(Rect *area)
+{
+	Rect r, b;
+	CGrafPtr port;
+	GDHandle dev;
+	PixMapHandle pm;
+
+	FrameToQDR(&frame, &r);
+	if (offscreen != NULL) {									/* the window changed size: a new one */
+		b = ((GrafPtr) offscreen)->portRect;
+		if (b.left != r.left || b.top != r.top || b.right != r.right || b.bottom != r.bottom) {
+			DisposeGWorld(offscreen);
+			offscreen = NULL;
+		}
+	}
+	if (offscreen == NULL && NewGWorld(&offscreen, 0, &r, NULL, NULL, 0) != noErr) offscreen = NULL;
+	if (offscreen == NULL || !LockPixels(pm = GetGWorldPixMap(offscreen))) { DrawMap(&r); return; }
+	GetGWorld(&port, &dev);
+	SetGWorld(offscreen, NULL);
+	DrawMap(&r);
+	SetGWorld(port, dev);
+	RGBForeColor(&kBlackC);										/* CopyBits colours by fore and back */
+	RGBBackColor(&kWhiteC);
+	CopyBits(&((GrafPtr) offscreen)->portBits, &((GrafPtr) port)->portBits, &r, &r, srcCopy, NULL);
+	UnlockPixels(pm);
+}
+
+void CMapPane::DrawMap(Rect *rp)
+{
+	Rect r = *rp, k;
+	Point outerPt[MAP_OUTER], groupPt[NC_TO_COUNT], to;
+	NCAddr outerIP[MAP_OUTER];
+	short outerSt[MAP_OUTER];									/* station index, -1: an address only	*/
+	Boolean shown[128], groupUsed[NC_TO_COUNT];
+	short n, e, i, j, g, a, b, m = 0, ng = 0, cx, cy, rx, ry, w, x, y;
+	char s[40];
+	unsigned long now = TickCount();
+
+	TextMode(srcOr);
+	RGBForeColor(&kViewBg);
+	PaintRect(&r);
+	TextFont(kGeneva); TextSize(9); TextFace(normal);
+	n = NC_StationCount();
+	e = NC_EdgeCount();
+	if (n > 128) n = 128;
+	if (n == 0 || e == 0) {
+		RGBForeColor(&kInkSoft);
+		MoveTo((short) (r.left + 28), (short) (r.top + 30));
+		DrawC(NC_Listening() ? "Listening - nothing heard yet." :
+			  "Press Scan to listen. The map draws who sends to whom, from what reaches this Mac.");
+		RGBForeColor(&kBlackC);
+		return;
+	}
+
+	for (i = 0; i < n; i++) shown[i] = FALSE;					/* the outer ring: busiest stations first */
+	while (m < MAP_STATIONS) {
+		short best = -1;
+		for (i = 0; i < n; i++)
+			if (!shown[i] && (best < 0 || NC_Station(i)->packets > NC_Station(best)->packets)) best = i;
+		if (best < 0) break;
+		shown[best] = TRUE;
+		outerSt[m] = best; outerIP[m] = NC_Station(best)->ip; m++;
+	}
+	for (j = 0; j < e && m < MAP_OUTER; j++) {					/* then destinations no station claims */
+		const NCEdge *ed = NC_Edge(j);
+		if (ed->to != NC_TO_UNICAST || ed->dst == 0 || ed->from >= n || !shown[ed->from]) continue;
+		for (i = 0; i < n && NC_Station(i)->ip != ed->dst; i++) ;
+		if (i < n) continue;									/* a station: on the ring, or not busy enough */
+		for (i = 0; i < m && outerIP[i] != ed->dst; i++) ;
+		if (i < m) continue;
+		outerSt[m] = -1; outerIP[m] = ed->dst; m++;
+	}
+	for (g = 0; g < NC_TO_COUNT; g++) groupUsed[g] = FALSE;
+	for (j = 0; j < e; j++) {
+		const NCEdge *ed = NC_Edge(j);
+		if (ed->to != NC_TO_UNICAST && ed->from < n && shown[ed->from]) groupUsed[ed->to] = TRUE;
+	}
+	for (g = 1; g < NC_TO_COUNT; g++) if (groupUsed[g]) ng++;
+
+	cx = (short) ((r.left + r.right) / 2);						/* geometry: room for labels and the legend */
+	cy = (short) ((r.top + r.bottom) / 2 - 8);
+	rx = (short) ((r.right - r.left) / 2 - 110);
+	ry = (short) ((r.bottom - r.top) / 2 - 40);
+	for (g = 1, j = 0; g < NC_TO_COUNT; g++) if (groupUsed[g]) {
+		if (ng == 1) { groupPt[g].h = cx; groupPt[g].v = cy; }
+		else RingPoint(j, ng, cx, cy, (short) (rx * 4 / 10), (short) (ry * 4 / 10), &groupPt[g]);
+		j++;
+	}
+	for (i = 0; i < m; i++) RingPoint(i, m, cx, cy, rx, ry, &outerPt[i]);
+
+	for (j = 0; j < e; j++) {									/* edges: colour by target, width by packets */
+		const NCEdge *ed = NC_Edge(j);
+		if (ed->from >= n || !shown[ed->from]) continue;
+		for (a = 0; a < m && outerSt[a] != ed->from; a++) ;
+		if (a == m) continue;
+		if (ed->to == NC_TO_UNICAST) {
+			for (b = 0; b < m && (outerIP[b] != ed->dst || b == a); b++) ;
+			if (b == m) continue;
+			to = outerPt[b];
+		} else to = groupPt[ed->to];
+		w = (short) (1 + (ed->packets >= 10) + (ed->packets >= 100) + (ed->packets >= 1000));
+		PenSize(w, w);
+		RGBForeColor(kEdgeColour[ed->to]);
+		MoveTo((short) (outerPt[a].h - w / 2), (short) (outerPt[a].v - w / 2));
+		LineTo((short) (to.h - w / 2), (short) (to.v - w / 2));
+	}
+	PenSize(1, 1);
+
+	for (g = 1; g < NC_TO_COUNT; g++) if (groupUsed[g]) {		/* group nodes */
+		w = (short) (WidthC(kGroupName[g]) + 14);
+		SetRect(&k, (short) (groupPt[g].h - w / 2), (short) (groupPt[g].v - 9),
+				(short) (groupPt[g].h + w / 2), (short) (groupPt[g].v + 9));
+		RGBForeColor(&kBox);
+		PaintRoundRect(&k, 14, 14);
+		PenSize(2, 2);
+		RGBForeColor(kEdgeColour[g]);
+		FrameRoundRect(&k, 14, 14);
+		PenSize(1, 1);
+		RGBForeColor(&kInk);
+		MoveTo((short) (k.left + 7), (short) (groupPt[g].v + 3));
+		DrawC(kGroupName[g]);
+	}
+	for (i = 0; i < m; i++) {									/* station nodes: filled, lit when just heard */
+		SetRect(&k, (short) (outerPt[i].h - 6), (short) (outerPt[i].v - 6), (short) (outerPt[i].h + 6),
+				(short) (outerPt[i].v + 6));
+		s[0] = '\0';
+		if (outerSt[i] >= 0) {
+			const NCStation *st = NC_Station(outerSt[i]);
+			RGBForeColor((now - st->lastTick < 180) ? &kAlive : &kStatusLn);
+			PaintOval(&k);
+			if ((st->seen & NC_SEEN_SELF) || (st->ip != 0 && st->ip == NC_LocalIP())) CCat(s, "this Mac");
+			else if (st->name[0]) CCat(s, st->name);
+			else if (st->ip) NC_IPToStr(st->ip, s);
+			else NC_MACToStr(st->mac, s);
+		} else {												/* hollow: only ever a destination */
+			RGBForeColor(&kBox);
+			PaintOval(&k);
+			if (outerIP[i] == NC_LocalIP()) CCat(s, "this Mac");
+			else NC_IPToStr(outerIP[i], s);
+		}
+		RGBForeColor(&kInk);
+		FrameOval(&k);
+		w = WidthC(s);
+		if (w > 110) w = 110;
+		if (outerPt[i].h > cx + 12) { x = (short) (outerPt[i].h + 10); y = (short) (outerPt[i].v + 3); }
+		else if (outerPt[i].h < cx - 12) { x = (short) (outerPt[i].h - 10 - w); y = (short) (outerPt[i].v + 3); }
+		else { x = (short) (outerPt[i].h - w / 2); y = (short) (outerPt[i].v < cy ? outerPt[i].v - 9 : outerPt[i].v + 17); }
+		RGBForeColor(outerSt[i] >= 0 ? &kInk : &kInkSoft);
+		MoveTo(x, y);
+		DrawTrunc(s, 110);
+	}
+
+	x = (short) (r.left + 14);									/* legend */
+	y = (short) (r.bottom - 10);
+	for (g = 0; g < NC_TO_COUNT; g++) {
+		PenSize(2, 2);
+		RGBForeColor(kEdgeColour[g]);
+		MoveTo(x, (short) (y - 4)); LineTo((short) (x + 14), (short) (y - 4));
+		PenSize(1, 1);
+		RGBForeColor(&kInkSoft);
+		MoveTo((short) (x + 18), y);
+		DrawC(kGroupName[g]);
+		x = (short) (x + 18 + WidthC(kGroupName[g]) + 8);
+	}
+	MoveTo(x, y);
+	DrawC("width = packets, hollow = destination only");
+	RGBForeColor(&kBlackC);
+}
+
+/******************************************************************************
  CToolsPane
 
  ******************************************************************************/

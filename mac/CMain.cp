@@ -638,6 +638,8 @@ void CMain::MakeNewWindow()
 		atPane->Hide();
 		listenPane = new CListenPane(itsWindow, this, kWinWidth, h, 0, kStripHeight);
 		listenPane->Hide();
+		mapPane = new CMapPane(itsWindow, this, kWinWidth, h, 0, kStripHeight);
+		mapPane->Hide();
 		toolsPane = new CToolsPane(itsWindow, this, kWinWidth, h, 0, kStripHeight);	/* under field and buttons */
 		toolsPane->Hide();
 		hostField = new CHostField(itsWindow, this, 250, 18, 18, kStripHeight + 14);
@@ -748,6 +750,10 @@ void CMain::Pump(long *maxSleep)
 		listenPane->Pulse();								/* the meter LEDs, every slice	*/
 		if (now - lastDraw > 120) { lastDraw = now; listenPane->Refresh(); }	/* "s ago", packets */
 	}
+	if (view == kViewMap && NC_Listening() && now - lastDraw > 120) {	/* the map: redrawn every 2 s */
+		lastDraw = now;
+		mapPane->Update();									/* offscreen, then copied: no flicker */
+	}
 	if (view == kViewTools && toolMode != 0) {
 		long sig = NC_ToolLineCount() * 8L + NC_ToolState();
 		if (sig != lastToolSig) { lastToolSig = sig; toolsPane->Refresh(); }
@@ -780,9 +786,9 @@ Boolean CMain::Busy()
 void CMain::StartScan()
 {
 	if (!netOK || stage != 0 || NC_Listening()) return;
-	if (view == kViewListen) {							/* Listen: start hearing		*/
+	if (view == kViewListen || view == kViewMap) {		/* Listen and Map: start hearing	*/
 		if (NC_ListenStart() != 0) SysBeep(1);
-		listenPane->Refresh();
+		if (view == kViewMap) mapPane->Refresh(); else listenPane->Refresh();
 		ShowStatus();
 		return;
 	}
@@ -856,6 +862,7 @@ void CMain::ShowStatus()
 		CCat(s, toolMode == 1 ? "Ping running." : toolMode == 2 ? "Looking up the name." : "Traceroute running.");
 	else if (view == kViewAT) CCat(s, "Ready - Scan looks up the AppleTalk devices, zone by zone.");
 	else if (view == kViewListen) CCat(s, "Ready - Scan listens to the network; nothing is sent.");
+	else if (view == kViewMap) CCat(s, "Ready - Scan listens and draws who sends to whom.");
 	else if (view == kViewTools) CCat(s, "Ready.");
 	else if (n > 0) CCat(s, "Ready.");
 	else CCat(s, "Ready - press Scan to sweep the local network.");
@@ -893,13 +900,14 @@ void CMain::SetView(short aView)
 	view = aView;
 	tabs->SetCurrent(aView);
 	listHeader->Hide(); listScroll->Hide(); detail->Hide();
-	atPane->Hide(); listenPane->Hide();
+	atPane->Hide(); listenPane->Hide(); mapPane->Hide();
 	toolsPane->Hide(); hostField->Hide(); pingBtn->Hide(); dnsBtn->Hide(); traceBtn->Hide();
 	if (aView == kViewIP) {
 		listHeader->Show(); listScroll->Show(); detail->Show();
 		hostList->Update();
 	} else if (aView == kViewAT) atPane->Show();
 	else if (aView == kViewListen) listenPane->Show();
+	else if (aView == kViewMap) mapPane->Show();
 	else {
 		toolsPane->Show(); hostField->Show(); pingBtn->Show(); dnsBtn->Show(); traceBtn->Show();
 	}
@@ -979,7 +987,8 @@ void CMain::DoCommand(long theCommand)
 		case cmdViewIP:
 		case cmdViewAT:
 		case cmdViewListen:
-		case cmdViewTools:	SetView((short) (theCommand - cmdViewIP)); break;
+		case cmdViewTools:
+		case cmdViewMap:	SetView((short) (theCommand - cmdViewIP)); break;
 		case cmdToolPing:	StartTool(1); break;
 		case cmdToolDns:	StartTool(2); break;
 		case cmdToolTrace:	StartTool(3); break;

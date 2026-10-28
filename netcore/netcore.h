@@ -133,6 +133,17 @@ typedef struct {
 	short		joined;							/* multicast groups joined (mDNS, LLDP, IPv6) */
 } NCListenStats;
 
+	/* the map: who sends to whom, from the frames Listen hears. A unicast edge ends at an IPv4 address (a station
+	   that claims it, or one never heard sending); every other edge ends at a group. */
+enum { NC_TO_UNICAST = 0, NC_TO_BCAST, NC_TO_MDNS, NC_TO_IP6MC, NC_TO_LLDP, NC_TO_MCAST, NC_TO_ATALK, NC_TO_COUNT };
+typedef struct {
+	short			from;						/* station index, see NC_Station */
+	char			to;							/* NC_TO_ */
+	NCAddr			dst;						/* NC_TO_UNICAST: the destination; 0 otherwise */
+	long			packets;
+	unsigned long	lastTick;
+} NCEdge;
+
 long		NC_ListenStart(void);					/* opens the endpoints; 0 or an Open Transport error */
 void		NC_ListenStop(void);
 Boolean		NC_Listening(void);
@@ -142,6 +153,8 @@ short		NC_StationCount(void);
 const NCStation *NC_Station(short i);
 long		NC_EventTotal(void);					/* events so far; the last NC_MAXEVENTS are kept */
 const char *NC_EventLine(long i);					/* i < NC_EventTotal(), "" once dropped */
+short		NC_EdgeCount(void);
+const NCEdge *NC_Edge(short i);
 void		NC_MACToStr(const unsigned char *mac, char *out);	/* "00:0c:6c:0b:0e:ad" */
 #define NC_MAXEVENTS	64
 

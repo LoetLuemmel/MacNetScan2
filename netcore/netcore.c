@@ -1250,6 +1250,7 @@ const char *NC_ToolMessage(void) { return gToolMsg; }
    sender's MAC is the receive address, the protocol the bound SAP. */
 
 #define NC_MAXSTATIONS	128
+#define NC_MAXEDGES		256
 #define NC_EVENTLEN		80
 #define LS_BUFSIZE		1600
 
@@ -1276,6 +1277,8 @@ static short			gNStations = 0;
 static char				(*gEvents)[NC_EVENTLEN] = NULL;
 static long				gNEvents = 0;
 static NCListenStats	gLs;
+static NCEdge			*gEdges = NULL;
+static short			gNEdges = 0;
 static UInt8			*gLsBuf = NULL;
 static UInt8			gLsMyMAC[6];
 static unsigned long	gLsStart = 0;
@@ -1332,6 +1335,26 @@ static NCStation *LsStation(const UInt8 *mac)
 	return st;
 }
 
+	/* one more frame from this station to that destination: a group, or an IPv4 address for unicast */
+static void LsEdge(const NCStation *st, char to, NCAddr dst)
+{
+	NCEdge *e;
+	short i, from;
+	if (!st || !gEdges) return;
+	from = (short) (st - gStations);
+	for (i = 0; i < gNEdges; i++) {
+		e = &gEdges[i];
+		if (e->from == from && e->to == to && e->dst == dst) break;
+	}
+	if (i == gNEdges) {
+		if (gNEdges >= NC_MAXEDGES) return;
+		e = &gEdges[gNEdges++];
+		e->from = from; e->to = to; e->dst = dst; e->packets = 0;
+	}
+	e->packets++;
+	e->lastTick = TickCount();
+}
+
 static void LsTouch(NCStation *st, char what)
 {
 	if (!st) return;
@@ -1371,6 +1394,8 @@ static void LsArp(const UInt8 *mac, const UInt8 *p, long n)
 	spa = ((NCAddr) p[14] << 24) | ((NCAddr) p[15] << 16) | ((NCAddr) p[16] << 8) | p[17];
 	tpa = ((NCAddr) p[24] << 24) | ((NCAddr) p[25] << 16) | ((NCAddr) p[26] << 8) | p[27];
 	LsClaim(st, spa);
+	if (p[7] == 1) LsEdge(st, NC_TO_BCAST, 0);			/* a request is broadcast, a reply goes to the asker */
+	else LsEdge(st, NC_TO_UNICAST, tpa);
 	if (spa != 0 && spa == tpa) {
 		NC_IPToStr(spa, a); s[0] = 0; StrCat(s, "gratuitous ARP for "); StrCat(s, a); LsEvent(s);
 	}
@@ -1393,6 +1418,9 @@ static void LsIp(const UInt8 *mac, const UInt8 *p, long n)
 	st = LsStation(mac);
 	LsTouch(st, NC_SEEN_IP);
 	LsClaim(st, src);
+	if (p[16] >= 224 && p[16] <= 239) LsEdge(st, (char) (dst == 0xE00000FBUL ? NC_TO_MDNS : NC_TO_MCAST), 0);
+	else if (dst == 0xFFFFFFFFUL || (dst & 0xFF) == 0xFF) LsEdge(st, NC_TO_BCAST, 0);
+	else LsEdge(st, NC_TO_UNICAST, dst);
 	if (p[9] == 17 && n >= ihl + 8) {					/* UDP */
 		UInt16 sp = (UInt16) ((p[ihl] << 8) | p[ihl + 1]), dp = (UInt16) ((p[ihl + 2] << 8) | p[ihl + 3]);
 		if ((sp == 67 || sp == 68) && (dp == 67 || dp == 68) && n >= ihl + 8 + 1) {
@@ -1414,6 +1442,7 @@ static void LsDdp(const UInt8 *mac, const UInt8 *p, long n)
 	gLs.ddp++;
 	st = LsStation(mac);
 	LsTouch(st, NC_SEEN_AT);
+	LsEdge(st, NC_TO_ATALK, 0);
 	if (st && n >= 13) {								/* long DDP header: source network 6-7, node 9 */
 		UInt16 net = (UInt16) ((p[6] << 8) | p[7]);
 		if (net != 0) { st->atNet = net; st->atNode = p[9]; }
@@ -1427,6 +1456,7 @@ static void LsAarp(const UInt8 *mac, const UInt8 *p, long n)
 	if (n < 18) return;
 	st = LsStation(p + 8);								/* sender hardware address; protocol address: 0, net, node */
 	LsTouch(st, NC_SEEN_AT);
+	LsEdge(st, NC_TO_ATALK, 0);
 	if (st) { st->atNet = (UInt16) ((p[15] << 8) | p[16]); st->atNode = p[17]; }
 	if (mac) {}
 }
@@ -1439,6 +1469,8 @@ static void LsIp6(const UInt8 *mac, const UInt8 *p, long n)
 	if (p[24] == 0xFF) gLs.ipMulticast++;				/* destination ff00::/8 */
 	st = LsStation(mac);
 	LsTouch(st, NC_SEEN_IP6);
+	if (p[24] == 0xFF)									/* ff02::fb is mDNS; IPv6 unicast has no IPv4 end */
+		LsEdge(st, (char) (p[25] == 0x02 && p[38] == 0 && p[39] == 0xFB ? NC_TO_MDNS : NC_TO_IP6MC), 0);
 }
 
 	/* LLDP: TLVs of a 7-bit type and a 9-bit length; 5 is the system name, 4 the port description */
@@ -1451,6 +1483,7 @@ static void LsLldp(const UInt8 *mac, const UInt8 *p, long n)
 	gLs.lldp++;
 	st = LsStation(mac);
 	LsTouch(st, NC_SEEN_LLDP);
+	LsEdge(st, NC_TO_LLDP, 0);
 	if (!st) return;
 	port[0] = 0;
 	s[0] = 0;											/* the name as sent, to compare */
@@ -1499,7 +1532,8 @@ long NC_ListenStart(void)
 	if (!gStations) gStations = (NCStation *) NewPtrClear((long) NC_MAXSTATIONS * sizeof(NCStation));
 	if (!gEvents) gEvents = (char (*)[NC_EVENTLEN]) NewPtrClear((long) NC_MAXEVENTS * NC_EVENTLEN);
 	if (!gLsBuf) gLsBuf = (UInt8 *) NewPtr(LS_BUFSIZE);
-	if (!gStations || !gEvents || !gLsBuf) return memFullErr;
+	if (!gEdges) gEdges = (NCEdge *) NewPtrClear((long) NC_MAXEDGES * sizeof(NCEdge));
+	if (!gStations || !gEvents || !gLsBuf || !gEdges) return memFullErr;
 	for (k = 0; k < LS_COUNT; k++) {
 		gLsEp[k] = OTOpenEndpoint(OTCreateConfiguration(kEnetName), 0, NULL, &err);
 		if (err != noErr || gLsEp[k] == NULL) { gLsEp[k] = NULL; last = err; continue; }
@@ -1575,6 +1609,8 @@ void NC_ListenIdle(void)
 void NC_ListenGetStats(NCListenStats *s) { *s = gLs; }
 short NC_StationCount(void) { return gNStations; }
 const NCStation *NC_Station(short i) { return (gStations && i >= 0 && i < gNStations) ? &gStations[i] : NULL; }
+short NC_EdgeCount(void) { return gNEdges; }
+const NCEdge *NC_Edge(short i) { return (gEdges && i >= 0 && i < gNEdges) ? &gEdges[i] : NULL; }
 long NC_EventTotal(void) { return gNEvents; }
 const char *NC_EventLine(long i)
 {
@@ -1594,6 +1630,7 @@ void NC_Shutdown(void)
 	if (gStations) { DisposePtr((Ptr) gStations); gStations = NULL; gNStations = 0; }
 	if (gEvents) { DisposePtr((Ptr) gEvents); gEvents = NULL; gNEvents = 0; }
 	if (gLsBuf) { DisposePtr((Ptr) gLsBuf); gLsBuf = NULL; }
+	if (gEdges) { DisposePtr((Ptr) gEdges); gEdges = NULL; gNEdges = 0; }
 	if (gRaw) { OTCloseProvider(gRaw); gRaw = NULL; }
 	if (gUdp) { OTCloseProvider(gUdp); gUdp = NULL; }
 	if (gSvc) { OTCloseProvider(gSvc); gSvc = NULL; }

@@ -11,6 +11,7 @@
 
 #include "CPane.h"
 #include "CEditText.h"
+#include <QDOffscreen.h>
 
 	// AppleTalk: this Mac's node, then every NBP entity with a type LED.
 class CATPane : public CPane
@@ -40,6 +41,23 @@ protected:
 	long			last[9];				// the counters at the last pulse
 	unsigned long	litUntil[9];
 	Boolean			lit[9];
+};
+
+	// Map: who sends to whom, drawn from what Listen hears - the busiest stations on an outer ring, the groups they
+	// send to (broadcast, mDNS, IPv6, LLDP, AppleTalk) on an inner one, unicast as chords between stations.
+class CMapPane : public CPane
+{
+public:
+	CMapPane(CView *anEnclosure, CBureaucrat *aSupervisor, short aWidth, short aHeight, short aHEncl, short aVEncl);
+	virtual			~CMapPane();
+
+	virtual	void	Draw(Rect *area);
+	void			Update(void);			// the 2 s redraw: straight to the screen, no update event
+
+protected:
+	void			DrawMap(Rect *r);
+
+	GWorldPtr		offscreen;				// drawn there, then copied: no flicker on a redraw
 };
 
 	// Tools: what ping, DNS or traceroute found, below the host field and its buttons.
