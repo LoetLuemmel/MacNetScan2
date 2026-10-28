@@ -494,6 +494,7 @@ CHostField::CHostField(CView *anEnclosure, CBureaucrat *aSupervisor, short aWidt
 {
 	SetFontNumber(kGeneva);
 	SetFontSize(12);
+	CalcTERects();						/* TE's viewRect still has the port font's 12 px line: clips the selection */
 	Specify(kEditable, kSelectable, kNotStylable);
 }
 
