@@ -45,6 +45,8 @@ protected:
 
 	// Map: who sends to whom, drawn from what Listen hears - the busiest stations on an outer ring, the groups they
 	// send to (broadcast, mDNS, IPv6, LLDP, AppleTalk) on an inner one, unicast as chords between stations.
+	// A click on a node selects it: its edges stand out and a box tells what is known about it.
+#define kMapNodes	26
 class CMapPane : public CPane
 {
 public:
@@ -52,12 +54,21 @@ public:
 	virtual			~CMapPane();
 
 	virtual	void	Draw(Rect *area);
+	virtual	void	DoClick(Point hitPt, short modifierKeys, long when);
 	void			Update(void);			// the 2 s redraw: straight to the screen, no update event
 
 protected:
 	void			DrawMap(Rect *r);
+	void			DrawInfo(Rect *r, const Point *node);	// in the corner across from the node
 
 	GWorldPtr		offscreen;				// drawn there, then copied: no flicker on a redraw
+	short			nodes;					// the outer ring as last drawn, for the click
+	Point			nodePt[kMapNodes];
+	short			nodeSt[kMapNodes];		// station index, -1: an address only
+	unsigned long	nodeIP[kMapNodes];
+	Boolean			selected;
+	short			selSt;					// the selected station, or -1 with
+	unsigned long	selIP;					// the selected address only ever seen as a destination
 };
 
 	// Tools: what ping, DNS or traceroute found, below the host field and its buttons.

@@ -332,7 +332,7 @@ void CListenPane::Draw(Rect *area)
  ******************************************************************************/
 
 #define MAP_STATIONS	20									/* the busiest stations on the outer ring		*/
-#define MAP_OUTER		26									/* and addresses only ever seen as destinations	*/
+#define MAP_OUTER		kMapNodes							/* and addresses only ever seen as destinations	*/
 
 static const char *kGroupName[NC_TO_COUNT] = { "Unicast", "Broadcast", "mDNS", "IPv6 multicast", "LLDP",
 											   "Multicast", "AppleTalk" };
@@ -364,6 +364,26 @@ CMapPane::CMapPane(CView *anEnclosure, CBureaucrat *aSupervisor, short aWidth, s
 	: CPane(anEnclosure, aSupervisor, aWidth, aHeight, aHEncl, aVEncl, sizELASTIC, sizELASTIC)
 {
 	offscreen = NULL;
+	nodes = 0;
+	selected = FALSE;
+	selSt = -1;
+	selIP = 0;
+	SetWantsClicks(TRUE);
+}
+
+	/* a node within 8 px selects it, anywhere else clears the selection */
+void CMapPane::DoClick(Point hitPt, short modifierKeys, long when)
+{
+	LongPt lp;
+	Point q;
+	short i;
+	lp.h = hitPt.h; lp.v = hitPt.v;
+	FrameToQD(&lp, &q);
+	for (i = 0; i < nodes; i++)
+		if (q.h >= nodePt[i].h - 8 && q.h <= nodePt[i].h + 8 && q.v >= nodePt[i].v - 8 && q.v <= nodePt[i].v + 8) break;
+	selected = (Boolean) (i < nodes);
+	if (selected) { selSt = nodeSt[i]; selIP = nodeIP[i]; }
+	Update();
 }
 
 CMapPane::~CMapPane()
@@ -413,7 +433,7 @@ void CMapPane::DrawMap(Rect *rp)
 	NCAddr outerIP[MAP_OUTER];
 	short outerSt[MAP_OUTER];									/* station index, -1: an address only	*/
 	Boolean shown[128], groupUsed[NC_TO_COUNT];
-	short n, e, i, j, g, a, b, m = 0, ng = 0, cx, cy, rx, ry, w, x, y;
+	short n, e, i, j, g, a, b, m = 0, ng = 0, cx, cy, rx, ry, w, x, y, sel = -1, pass;
 	char s[40];
 	unsigned long now = TickCount();
 
@@ -433,36 +453,45 @@ void CMapPane::DrawMap(Rect *rp)
 		return;
 	}
 
-	for (i = 0; i < n; i++) shown[i] = FALSE;					/* the outer ring: busiest stations first */
-	while (m < MAP_STATIONS) {
-		short best = -1;
-		for (i = 0; i < n; i++)
-			if (!shown[i] && (best < 0 || NC_Station(i)->packets > NC_Station(best)->packets)) best = i;
-		if (best < 0) break;
-		shown[best] = TRUE;
-		outerSt[m] = best; outerIP[m] = NC_Station(best)->ip; m++;
-	}
-	for (j = 0; j < e && m < MAP_OUTER; j++) {					/* then destinations no station claims */
-		const NCEdge *ed = NC_Edge(j);
-		if (ed->to != NC_TO_UNICAST || ed->dst == 0 || ed->from >= n || !shown[ed->from]) continue;
-		for (i = 0; i < n && NC_Station(i)->ip != ed->dst; i++) ;
-		if (i < n) continue;									/* a station: on the ring, or not busy enough */
-		for (i = 0; i < m && outerIP[i] != ed->dst; i++) ;
-		if (i < m) continue;
-		outerSt[m] = -1; outerIP[m] = ed->dst; m++;
-	}
-	for (i = 1; i < m; i++) {									/* clockwise by address: a node keeps its place */
-		short st0 = outerSt[i];
-		NCAddr ip0 = outerIP[i];
-		NCAddr key = ip0 ? ip0 : 0xFFFFFFFFUL;					/* MAC only: at the end, first heard first */
-		for (j = i; j > 0; j--) {
-			NCAddr k0 = outerIP[j - 1] ? outerIP[j - 1] : 0xFFFFFFFFUL;
-			if (k0 < key || (k0 == key && outerSt[j - 1] <= st0)) break;
-			outerSt[j] = outerSt[j - 1];
-			outerIP[j] = outerIP[j - 1];
+	for (i = 0; i < n; i++) shown[i] = FALSE;
+	if (selected && nodes > 0) {								/* a selection freezes the ring: the nodes stay */
+		for (i = 0; i < nodes; i++) {							/* where they were, under the pointer         */
+			outerSt[m] = nodeSt[i];
+			outerIP[m] = nodeIP[i];
+			if (nodeSt[i] >= 0 && nodeSt[i] < n) shown[nodeSt[i]] = TRUE;
+			m++;
 		}
-		outerSt[j] = st0;
-		outerIP[j] = ip0;
+	} else {													/* the outer ring: busiest stations first */
+		while (m < MAP_STATIONS) {
+			short best = -1;
+			for (i = 0; i < n; i++)
+				if (!shown[i] && (best < 0 || NC_Station(i)->packets > NC_Station(best)->packets)) best = i;
+			if (best < 0) break;
+			shown[best] = TRUE;
+			outerSt[m] = best; outerIP[m] = NC_Station(best)->ip; m++;
+		}
+		for (j = 0; j < e && m < MAP_OUTER; j++) {					/* then destinations no station claims */
+			const NCEdge *ed = NC_Edge(j);
+			if (ed->to != NC_TO_UNICAST || ed->dst == 0 || ed->from >= n || !shown[ed->from]) continue;
+			for (i = 0; i < n && NC_Station(i)->ip != ed->dst; i++) ;
+			if (i < n) continue;									/* a station: on the ring, or not busy enough */
+			for (i = 0; i < m && outerIP[i] != ed->dst; i++) ;
+			if (i < m) continue;
+			outerSt[m] = -1; outerIP[m] = ed->dst; m++;
+		}
+		for (i = 1; i < m; i++) {									/* clockwise by address: a node keeps its place */
+			short st0 = outerSt[i];
+			NCAddr ip0 = outerIP[i];
+			NCAddr key = ip0 ? ip0 : 0xFFFFFFFFUL;					/* MAC only: at the end, first heard first */
+			for (j = i; j > 0; j--) {
+				NCAddr k0 = outerIP[j - 1] ? outerIP[j - 1] : 0xFFFFFFFFUL;
+				if (k0 < key || (k0 == key && outerSt[j - 1] <= st0)) break;
+				outerSt[j] = outerSt[j - 1];
+				outerIP[j] = outerIP[j - 1];
+			}
+			outerSt[j] = st0;
+			outerIP[j] = ip0;
+		}
 	}
 	for (g = 0; g < NC_TO_COUNT; g++) groupUsed[g] = FALSE;
 	for (j = 0; j < e; j++) {
@@ -480,21 +509,34 @@ void CMapPane::DrawMap(Rect *rp)
 		else RingPoint(j, ng, cx, cy, (short) (rx * 4 / 10), (short) (ry * 4 / 10), &groupPt[g]);
 		j++;
 	}
-	for (i = 0; i < m; i++) RingPoint(i, m, cx, cy, rx, ry, &outerPt[i]);
+	for (i = 0; i < m; i++) {
+		RingPoint(i, m, cx, cy, rx, ry, &outerPt[i]);
+		nodePt[i] = outerPt[i];									/* for the click */
+		nodeSt[i] = outerSt[i];
+		nodeIP[i] = outerIP[i];
+		if (selected && (selSt >= 0 ? outerSt[i] == selSt : (outerSt[i] < 0 && outerIP[i] == selIP))) sel = i;
+	}
+	nodes = m;
 
-	for (j = 0; j < e; j++) {									/* edges: colour by target, width by packets */
+	for (pass = 0; pass < 2; pass++)							/* edges: colour by target, width by packets;	*/
+	for (j = 0; j < e; j++) {									/* a selection's own drawn last, others pale	*/
 		const NCEdge *ed = NC_Edge(j);
+		Boolean mine;
 		if (ed->from >= n || !shown[ed->from]) continue;
 		for (a = 0; a < m && outerSt[a] != ed->from; a++) ;
 		if (a == m) continue;
+		b = -1;
 		if (ed->to == NC_TO_UNICAST) {
 			for (b = 0; b < m && (outerIP[b] != ed->dst || b == a); b++) ;
 			if (b == m) continue;
 			to = outerPt[b];
 		} else to = groupPt[ed->to];
+		mine = (Boolean) (sel >= 0 && (a == sel || b == sel));
+		if (pass != (mine ? 1 : 0)) continue;
 		w = (short) (1 + (ed->packets >= 10) + (ed->packets >= 100) + (ed->packets >= 1000));
+		if (sel >= 0 && !mine) w = 1;
 		PenSize(w, w);
-		RGBForeColor(kEdgeColour[ed->to]);
+		RGBForeColor(sel >= 0 && !mine ? &kStatusLn : kEdgeColour[ed->to]);
 		MoveTo((short) (outerPt[a].h - w / 2), (short) (outerPt[a].v - w / 2));
 		LineTo((short) (to.h - w / 2), (short) (to.v - w / 2));
 	}
@@ -537,6 +579,13 @@ void CMapPane::DrawMap(Rect *rp)
 		}
 		RGBForeColor(&kInk);
 		FrameOval(&k);
+		if (i == sel) {											/* the selection: a ring in the accent colour */
+			InsetRect(&k, -4, -4);
+			PenSize(2, 2);
+			RGBForeColor(&kAccent);
+			FrameOval(&k);
+			PenSize(1, 1);
+		}
 		if (self) { TextFace(bold); TextSize(12); }					/* the one node the reader looks for */
 		w = WidthC(s);
 		if (w > 110) w = 110;
@@ -563,7 +612,113 @@ void CMapPane::DrawMap(Rect *rp)
 	}
 	MoveTo(x, y);
 	DrawC("width = packets, hollow = destination only");
+	if (selected) DrawInfo(&r, sel >= 0 ? &outerPt[sel] : (const Point *) NULL);
 	RGBForeColor(&kBlackC);
+}
+
+	/* what is known about the selection: Listen's station, the map's edges, the IP scan's host */
+#define INFO_LINES	22
+#define INFO_LEN	48
+void CMapPane::DrawInfo(Rect *rp, const Point *node)
+{
+	char line[INFO_LINES][INFO_LEN], s[INFO_LEN], t[20];
+	short nl = 0, i, j, p, y, n = NC_StationCount(), e = NC_EdgeCount(), shownTo = 0, shownFrom = 0;
+	const NCStation *st = (selSt >= 0 && selSt < n) ? NC_Station(selSt) : NULL;
+	unsigned long ip = st ? st->ip : selIP, now = TickCount();
+	const NCHost *h = ip ? HostByIP(ip) : NULL;
+	const char *nm;
+	const RGBColor *c;
+	Rect k;
+
+#define ADD(str)	{ if (nl < INFO_LINES) { line[nl][0] = '\0'; CCat(line[nl], str); nl++; } }
+	s[0] = '\0';												/* line 0: the title */
+	if (ip != 0 && ip == NC_LocalIP()) CCat(s, "this Mac");
+	else if (st && st->name[0]) CCat(s, st->name);
+	else if (h && h->name[0] && h->name[0] != '?') CCat(s, h->name);
+	else if (ip) NC_IPToStr(ip, s);
+	else if (st) NC_MACToStr(st->mac, s);
+	ADD(s);
+	if (ip) { s[0] = '\0'; CCat(s, "IP  "); NC_IPToStr(ip, t); CCat(s, t); ADD(s); }
+	if (st) {
+		s[0] = '\0'; CCat(s, "MAC  "); NC_MACToStr(st->mac, t); CCat(s, t); ADD(s);
+		if (st->atNet) { s[0] = '\0'; CCat(s, "AppleTalk  "); CCatNum(s, st->atNet); CCat(s, "."); CCatNum(s, st->atNode); ADD(s); }
+		if (st->name[0]) { s[0] = '\0'; CCat(s, "LLDP  "); CCat(s, st->name); ADD(s); }
+		s[0] = '\0'; CCat(s, "Heard  ");
+		if (st->seen & NC_SEEN_ARP) CCat(s, "ARP ");
+		if (st->seen & NC_SEEN_IP) CCat(s, "IP ");
+		if (st->seen & NC_SEEN_IP6) CCat(s, "IPv6 ");
+		if (st->seen & NC_SEEN_LLDP) CCat(s, "LLDP ");
+		if (st->seen & NC_SEEN_AT) CCat(s, "AppleTalk");
+		ADD(s);
+		s[0] = '\0'; CCat(s, "Packets  "); CCatNum(s, st->packets);
+		CCat(s, ", last "); CCatNum(s, (long) ((now - st->lastTick) / 60)); CCat(s, " s ago"); ADD(s);
+	} else ADD("Never heard sending");
+	if (h) {													/* from the IP scan */
+		if (h->name[0] && h->name[0] != '?') {
+			s[0] = '\0'; CCat(s, "Name  "); CCat(s, h->name);
+			CCat(s, h->nameSource == 'N' ? " (NetBIOS)" : h->nameSource == 'M' ? " (mDNS)" : h->nameSource == 'D' ? " (DNS)" : "");
+			ADD(s);
+		}
+		if (h->rttUs >= 0) { s[0] = '\0'; CCat(s, "Round trip  "); NC_RttToStr(h->rttUs, t); CCat(s, t); CCat(s, " ms"); ADD(s); }
+		s[0] = '\0'; CCat(s, "Open ");
+		for (p = 0; p < NC_PortCount(); p++)
+			if (h->openMask & (1UL << p)) { SvcFor(p, &nm, &c); CCat(s, " "); CCat(s, nm); }
+		if (h->openMask == 0) CCat(s, " -");
+		ADD(s);
+	}
+	if (st) {													/* where it sends */
+		ADD("\001Sends to");
+		for (j = 0; j < e && shownTo < 6; j++) {
+			const NCEdge *ed = NC_Edge(j);
+			if (ed->from != selSt) continue;
+			s[0] = '\0'; CCat(s, "  ");
+			if (ed->to == NC_TO_UNICAST) { NC_IPToStr(ed->dst, t); CCat(s, t); } else CCat(s, kGroupName[ed->to]);
+			CCat(s, "  "); CCatNum(s, ed->packets); ADD(s);
+			shownTo++;
+		}
+	}
+	if (ip) {													/* who sends to it */
+		for (j = 0; j < e && shownFrom < 5; j++) {
+			const NCEdge *ed = NC_Edge(j);
+			const NCStation *f;
+			if (ed->to != NC_TO_UNICAST || ed->dst != ip || ed->from >= n) continue;
+			if (shownFrom == 0) ADD("\001Heard from");
+			f = NC_Station(ed->from);
+			s[0] = '\0'; CCat(s, "  ");
+			if (f->ip) NC_IPToStr(f->ip, t); else NC_MACToStr(f->mac, t);
+			CCat(s, t); CCat(s, "  "); CCatNum(s, ed->packets); ADD(s);
+			shownFrom++;
+		}
+	}
+#undef ADD
+
+	{															/* the corner across from the node, above the legend */
+		short hgt = (short) (26 + (nl - 1) * 12 + 8), l, t;
+		Boolean left = (Boolean) (node != NULL && node->h > (rp->left + rp->right) / 2);
+		Boolean low = (Boolean) (node != NULL && node->v < (rp->top + rp->bottom) / 2);
+		l = (short) (left ? rp->left + 10 : rp->right - 236);
+		t = (short) (low ? rp->bottom - 24 - hgt : rp->top + 10);
+		SetRect(&k, l, t, (short) (l + 226), (short) (t + hgt));
+	}
+	RGBForeColor(&kBox);
+	PaintRoundRect(&k, 10, 10);
+	PenSize(2, 2);
+	RGBForeColor(&kAccent);
+	FrameRoundRect(&k, 10, 10);
+	PenSize(1, 1);
+	TextFont(kGeneva); TextSize(12); TextFace(bold);
+	RGBForeColor(&kInk);
+	MoveTo((short) (k.left + 10), (short) (k.top + 18));
+	DrawTrunc(line[0], (short) (k.right - k.left - 20));
+	TextSize(9);
+	for (i = 1, y = (short) (k.top + 34); i < nl; i++, y += 12) {
+		Boolean head = (Boolean) (line[i][0] == '\001');
+		TextFace(head ? bold : normal);
+		RGBForeColor(head ? &kInk : &kInkSoft);
+		MoveTo((short) (k.left + 10), y);
+		DrawTrunc(head ? line[i] + 1 : line[i], (short) (k.right - k.left - 20));
+	}
+	TextFace(normal);
 }
 
 /******************************************************************************
