@@ -451,6 +451,19 @@ void CMapPane::DrawMap(Rect *rp)
 		if (i < m) continue;
 		outerSt[m] = -1; outerIP[m] = ed->dst; m++;
 	}
+	for (i = 1; i < m; i++) {									/* clockwise by address: a node keeps its place */
+		short st0 = outerSt[i];
+		NCAddr ip0 = outerIP[i];
+		NCAddr key = ip0 ? ip0 : 0xFFFFFFFFUL;					/* MAC only: at the end, first heard first */
+		for (j = i; j > 0; j--) {
+			NCAddr k0 = outerIP[j - 1] ? outerIP[j - 1] : 0xFFFFFFFFUL;
+			if (k0 < key || (k0 == key && outerSt[j - 1] <= st0)) break;
+			outerSt[j] = outerSt[j - 1];
+			outerIP[j] = outerIP[j - 1];
+		}
+		outerSt[j] = st0;
+		outerIP[j] = ip0;
+	}
 	for (g = 0; g < NC_TO_COUNT; g++) groupUsed[g] = FALSE;
 	for (j = 0; j < e; j++) {
 		const NCEdge *ed = NC_Edge(j);

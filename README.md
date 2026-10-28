@@ -14,6 +14,7 @@ System 7.6.1 guest in Basilisk II through [AppleBridge](https://github.com/LoetL
 | **AppleTalk** | This Mac's node and zone; every NBP entity in every zone with a type LED. |
 | **Listen** | Passive - sends nothing but four multicast joins. ARP, IP broadcasts/multicasts (mDNS), DHCP, NetBIOS, IPv6, LLDP, AppleTalk and AARP that reach this Mac: protocol meters, a station table (MAC, IP, AppleTalk address or LLDP system name), an event log (new stations, gratuitous ARP, DHCP, IP conflicts, LLDP neighbours). |
 | **Tools** | Ping (TCP connect), DNS lookup (both directions), traceroute (ICMP). |
+| **Map** | Who sends to whom, from what Listen hears: the 20 busiest stations around an oval in address order, the groups they send to (broadcast, mDNS, IPv6 multicast, LLDP, AppleTalk) on an inner ring, unicast as chords; destinations never heard sending are hollow. Colour by target, width by packets (1/10/100/1000); redrawn every 2 s through a GWorld, so it does not flicker. |
 
 Plus: Export / Copy of a tab-delimited report, **Scan › Options** (range, timeout, probes at once, ports; kept in
 `MacNetScan Prefs`), an About box with MacNetScan 1's radar sweep, a Finder icon.
@@ -44,8 +45,9 @@ original/    MacNetScan 1 (MPW, one C file)
    ".o Converter": `OpenTransport.o`, `OpenTransportApp.o`, `OpenTptInet.o`, `OpenTptATalk.o` - **patched** with
    `tools/patch_otlibs.py` first (the SDK's `Fail` and `FlushCache` collide with TCL's). The OT SDK headers go next
    to `netcore.c`; `OTCompat.h` and `OTNames.h` (MPW's upper-case pascal names) are here.
-3. Project type: **Far CODE**, partition 1500 K, creator `IPSc`. Segments: the OT libraries in one, `netcore.c` +
-   `CViews.cp` in another (28.6 K of 32 K).
+3. Project type: **Far CODE**, partition 1500 K, creator `IPSc`. Segments: the OT libraries in one, `CViews.cp` in
+   another (16.7 K of 32 K), `netcore.c` alone in a third (17.9 K) - drag it below the last segment in the project
+   window. Nothing calls `UnloadSeg`, so the Open Transport notifiers in `netcore.c` stay resident.
 4. Build Application, then `SetFile -a B MacNetScan`.
 
 Why each step is there: the comments in `netcore/netcore.c`, `tools/patch_otlibs.py` and `probe/sniff_main.c`.
