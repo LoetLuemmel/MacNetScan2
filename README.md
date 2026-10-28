@@ -52,9 +52,20 @@ Why each step is there: the comments in `netcore/netcore.c`, `tools/patch_otlibs
 
 ## Under Basilisk II
 
-The Listen view only binds and receives. Asking the emulated Ethernet driver for raw mode (`I_OTSetRawMode`) or
-promiscuous mode (`OPT_SETPROMISCUOUS` at `LNK_TPI`) never returns and freezes the guest - measured with a flushed
-per-call trail in `probe/sniff_main.c`.
+The Listen view only binds and receives - and that is already all there is to have. Raw mode (`I_OTSetRawMode`) and
+promiscuous mode (`OPT_SETPROMISCUOUS` at `LNK_TPI`) never return and freeze the guest (flushed per-call trail in
+`probe/sniff_main.c`), but they would add nothing:
+
+- With the `etherhelper` backend, `etherhelpertool` opens bpf on the host interface in promiscuous mode, unfiltered.
+  Basilisk's `.ENET` driver hands every frame to the handler bound for its EtherType without checking the
+  destination MAC, and the guest uses the host interface's MAC - so it also sees the host's own traffic.
+- Open Transport does not filter by destination MAC either. Proven: another host pinged a spare IP mapped to a made-up
+  MAC by a static ARP entry; the switch flooded the frames and SniffProbe, binds and receives only, got every one.
+- Raw mode would add only the destination MAC; the sender MAC comes with every frame anyway. More protocols are one
+  more bind away (each bind attaches its EtherType at the driver).
+
+The freeze is not in Basilisk: its `.ENET` driver answers every unknown control call with `controlErr` and completes
+it (`BasiliskII/src/ether.cpp`). It is inside Open Transport's layer above that driver.
 
 ## Authorized use only
 
