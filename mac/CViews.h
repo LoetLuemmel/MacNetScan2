@@ -55,7 +55,8 @@ protected:
 	short			mode;					// 0 nothing yet, 1 ping, 2 DNS, 3 traceroute
 };
 
-	// A light push button for the work area (CToolButton is the dark strip's).
+	// A light push button for the work area (CToolButton is the dark strip's). While its
+	// tool runs it stays down - accent blue - so the view shows what is going on.
 class CLightButton : public CPane
 {
 public:
@@ -64,12 +65,14 @@ public:
 
 	virtual	void	Draw(Rect *area);
 	virtual	void	DoClick(Point hitPt, short modifierKeys, long when);
+	void			SetRunning(Boolean aRunning);
 
 protected:
 	void			DrawButton(Boolean pressed);
 
 	Str31			label;
 	long			command;
+	Boolean			running;
 };
 
 	// The host field: Return pings.

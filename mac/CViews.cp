@@ -424,7 +424,18 @@ CLightButton::CLightButton(CView *anEnclosure, CBureaucrat *aSupervisor, short a
 {
 	CToPStr(aLabel, label);
 	command = aCommand;
+	running = FALSE;
 	SetWantsClicks(TRUE);
+}
+
+void CLightButton::SetRunning(Boolean aRunning)
+{
+	if (aRunning == running) return;
+	running = aRunning;
+	if (ReallyVisible()) {								/* hidden: Draw shows it on the next Show */
+		Prepare();
+		DrawButton(FALSE);
+	}
 }
 
 void CLightButton::Draw(Rect *area)
@@ -436,6 +447,7 @@ void CLightButton::DrawButton(Boolean pressed)
 {
 	Rect r;
 	short w;
+	pressed = (Boolean) (pressed || running);
 	TextMode(srcOr);
 	FrameToQDR(&frame, &r);
 	RGBForeColor(&kViewBg);

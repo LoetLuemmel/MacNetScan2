@@ -872,6 +872,13 @@ void CMain::ShowStatus()
 		exportBtn->SetActive((Boolean) (n > 0));
 		copyBtn->SetActive((Boolean) (n > 0));
 	}
+	if (pingBtn != NULL) {								/* the running tool's button stays down */
+		short t = NC_ToolState();
+		short run = (short) ((t == NC_TOOL_RESOLVING || t == NC_TOOL_RUNNING) ? toolMode : 0);
+		pingBtn->SetRunning((Boolean) (run == 1));
+		dnsBtn->SetRunning((Boolean) (run == 2));
+		traceBtn->SetRunning((Boolean) (run == 3));
+	}
 }
 
 
