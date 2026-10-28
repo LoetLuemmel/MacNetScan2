@@ -827,7 +827,7 @@ void CMain::StartScan()
 
 void CMain::StopScan()
 {
-	if (NC_Listening()) { NC_ListenStop(); listenPane->Refresh(); }
+	if (NC_Listening()) { NC_ListenStop(); listenPane->Refresh(); framesPane->Refresh(); }
 	if (toolMode != 0) NC_ToolStop();
 	if (stage != 0) { NC_SweepStop(); stage = 0; }
 	ShowStatus();
@@ -895,8 +895,8 @@ void CMain::ShowStatus()
 	if (scanBtn != NULL) {
 		scanBtn->SetActive((Boolean) (netOK && idle));
 		stopBtn->SetActive((Boolean) !idle);
-		exportBtn->SetActive((Boolean) (n > 0));
-		copyBtn->SetActive((Boolean) (n > 0));
+		exportBtn->SetActive((Boolean) (view == kViewFrames ? NC_FrameTotal() > 0 : n > 0));	/* Frames: pcap */
+		copyBtn->SetActive((Boolean) (view != kViewFrames && n > 0));
 	}
 	if (pingBtn != NULL) {								/* the running tool's button stays down */
 		short t = NC_ToolState();
@@ -989,6 +989,34 @@ void CMain::ExportReport()
 	DisposePtr(buf);
 }
 
+void CMain::ExportFrames()								// the frames kept, oldest first, for Wireshark
+{
+	StandardFileReply reply;
+	unsigned char rec[NC_PCAPREC];
+	long total = NC_FrameTotal(), i, n;
+	short ref;
+	OSErr err;
+
+	StandardPutFile("\pSave pcap for Wireshark as:", "\pMacNetScan.pcap", &reply);
+	if (!reply.sfGood) return;
+	err = FSpCreate(&reply.sfFile, 0x3F3F3F3FL, 'BINA', reply.sfScript);	/* creator: four question marks; as a literal two of them and the quote make a trigraph */
+	if (err == dupFNErr) err = noErr;
+	if (err == noErr) err = FSpOpenDF(&reply.sfFile, fsRdWrPerm, &ref);
+	if (err == noErr) {
+		SetEOF(ref, 0);
+		n = NC_PcapHeader(rec);
+		err = FSWrite(ref, &n, rec);
+		for (i = total > NC_MAXFRAMES ? total - NC_MAXFRAMES : 0; err == noErr && i < total; i++) {
+			const NCFrame *f = NC_Frame(i);
+			if (f == NULL) continue;							/* overwritten while we wrote */
+			n = NC_PcapRecord(f, rec);
+			err = FSWrite(ref, &n, rec);
+		}
+		FSClose(ref);
+	}
+	if (err != noErr) SysBeep(1);
+}
+
 
 /******************************************************************************
  DoCommand / UpdateMenus
@@ -1001,7 +1029,7 @@ void CMain::DoCommand(long theCommand)
 	switch (theCommand) {
 		case cmdScanStart:	StartScan(); break;
 		case cmdScanStop:	StopScan(); break;
-		case cmdExport:		ExportReport(); break;
+		case cmdExport:		if (view == kViewFrames) ExportFrames(); else ExportReport(); break;
 		case cmdCopyReport:	CopyReport(); break;
 		case cmdOptions:	if (!Busy() && RunOptions()) { hostList->Update(); listHeader->Refresh(); ShowStatus(); } break;
 		case cmdViewIP:
@@ -1026,7 +1054,9 @@ void CMain::UpdateMenus()
 	if (netOK && !Busy()) gBartender->EnableCmd(cmdScanStart);
 	if (Busy()) gBartender->EnableCmd(cmdScanStop);
 	else gBartender->EnableCmd(cmdOptions);
-	if (NC_HostCount() > 0) {
+	if (view == kViewFrames) {
+		if (NC_FrameTotal() > 0) gBartender->EnableCmd(cmdExport);
+	} else if (NC_HostCount() > 0) {
 		gBartender->EnableCmd(cmdExport);
 		gBartender->EnableCmd(cmdCopyReport);
 	}

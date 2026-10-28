@@ -201,6 +201,7 @@ protected:
 	void	ShowStatus(void);
 	void	CopyReport(void);
 	void	ExportReport(void);
+	void	ExportFrames(void);			// Frames: the capture as pcap
 	void	StartTool(short aMode);
 	Boolean	Busy(void);				// a sweep, a lookup, listening or a tool is running
 

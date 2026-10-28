@@ -15,9 +15,9 @@ System 7.6.1 guest in Basilisk II through [AppleBridge](https://github.com/LoetL
 | **Listen** | Passive - sends nothing but four multicast joins. ARP, IP broadcasts/multicasts (mDNS), DHCP, NetBIOS, IPv6, LLDP, AppleTalk and AARP that reach this Mac: protocol meters, a station table (MAC, IP, AppleTalk address or LLDP system name), an event log (new stations, gratuitous ARP, DHCP, IP conflicts, LLDP neighbours). |
 | **Tools** | Ping (TCP connect), DNS lookup (both directions), traceroute (ICMP). |
 | **Map** | Who sends to whom, from what Listen hears: the 20 busiest stations around an oval in address order, the groups they send to (broadcast, mDNS, IPv6 multicast, LLDP, AppleTalk) on an inner ring, unicast as chords; destinations never heard sending are hollow. Colour by target, width by packets (1/10/100/1000); redrawn every 2 s through a GWorld, so it does not flicker. |
-| **Frames** | The capture behind Listen as a packet list - number, time, source, destination, protocol (coloured), length, a one-line summary - and below it the selected frame's protocol tree (link, ARP/AARP, IPv4/IPv6, TCP/UDP/ICMP/ICMPv6, DNS/mDNS, DHCP, NetBIOS, LLDP, DDP/NBP/ATP) and its bytes in hex. The last 400 frames, 384 bytes of each. The list follows the newest frame; a click on a frame holds it still, a second click lets it follow again. Open Transport hands frames over without their MAC header, so the link layer shows the sender and the type only. |
+| **Frames** | The capture behind Listen as a packet list - number, time, source, destination, protocol (coloured), length, a one-line summary - and below it the selected frame's protocol tree (link, ARP/AARP, IPv4/IPv6, TCP/UDP/ICMP/ICMPv6, DNS/mDNS/LLMNR, DHCP, LLDP, DDP/NBP; NetBIOS and ATP in the summary line) and its bytes in hex. The last 400 frames, 384 bytes of each. The list follows the newest frame; a click on a frame holds it still, a second click lets it follow again. Open Transport hands frames over without their MAC header, so the link layer shows the sender and the type only. **Export** writes the frames kept as a pcap file for Wireshark, link type 113 (Linux cooked capture), which needs no MAC header - just the sender and EtherType Open Transport hands on; timestamps in UTC (set the guest's Map control panel, or they are off by its time zone). |
 
-Plus: Export / Copy of a tab-delimited report, **Scan › Options** (range, timeout, probes at once, ports; kept in
+Plus: Export / Copy of a tab-delimited report of the IP sweep (in Frames, Export writes pcap), **Scan › Options** (range, timeout, probes at once, ports; kept in
 `MacNetScan Prefs`), an About box with MacNetScan 1's radar sweep, a Finder icon.
 
 | Listen | AppleTalk | Tools |
@@ -48,7 +48,7 @@ original/    MacNetScan 1 (MPW, one C file)
    `tools/patch_otlibs.py` first (the SDK's `Fail` and `FlushCache` collide with TCL's). The OT SDK headers go next
    to `netcore.c`; `OTCompat.h` and `OTNames.h` (MPW's upper-case pascal names) are here.
 3. Project type: **Far CODE**, partition 1500 K, creator `IPSc`. Segments: the OT libraries in one, `CViews.cp` in
-   another (24.5 K of 32 K), `netcore.c` alone in a third (18.3 K), `frames.c` alone in a fourth (12.4 K) - drag
+   another (24.7 K of 32 K), `netcore.c` alone in a third (18.3 K), `frames.c` alone in a fourth (13.1 K) - drag
    each below the last segment in the project window. Nothing calls `UnloadSeg`, so the Open Transport notifiers in `netcore.c` stay resident.
 4. Build Application, then `SetFile -a B MacNetScan`.
 

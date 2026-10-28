@@ -8,6 +8,7 @@
 #include <Events.h>						/* TickCount: in the TCL project a .c file has no MacHeaders prefix */
 #include <Memory.h>						/* NewPtr, NewPtrClear, DisposePtr, BlockMove */
 #include <Errors.h>						/* memFullErr */
+#include <OSUtils.h>						/* GetDateTime, ReadLocation: the capture's start for pcap */
 #include <OpenTransport.h>
 #include <OpenTptInternet.h>
 #include <OpenTptAppleTalk.h>
@@ -1527,6 +1528,7 @@ static OSStatus LsJoin(EndpointRef ep, const UInt8 *group)
 static NCFrame			*gFrames = NULL;
 static long				gNFrames = 0;
 static OTTimeStamp		gLsStamp;
+static unsigned long	gLsEpoch = 0;
 static const UInt16 kLsType[LS_COUNT] = { 0x0806, 0x0800, 0x809B, 0x80F3, 0x86DD, 0x88CC };
 
 static void LsCapture(short k, const UInt8 *mac, const UInt8 *p, long n)
@@ -1546,6 +1548,19 @@ static void LsCapture(short k, const UInt8 *mac, const UInt8 *p, long n)
 }
 
 long NC_FrameTotal(void) { return gNFrames; }
+unsigned long NC_FrameEpoch(void) { return gLsEpoch; }
+
+static unsigned long UnixNow(void)			/* the Mac clock is local time since 1904; pcap wants UTC since 1970 */
+{
+	unsigned long secs;
+	MachineLocation loc;
+	long delta;
+	GetDateTime(&secs);
+	ReadLocation(&loc);
+	delta = loc.gmtFlags.gmtDelta & 0x00FFFFFFL;						/* 24 bits, signed */
+	if (delta & 0x00800000L) delta |= 0xFF000000L;
+	return secs - 2082844800UL - (unsigned long) delta;
+}
 const NCFrame *NC_Frame(long i)
 {
 	if (!gFrames || i < 0 || i >= gNFrames || i < gNFrames - NC_MAXFRAMES) return NULL;
@@ -1588,6 +1603,7 @@ long NC_ListenStart(void)
 	gListening = true;
 	gLsStart = TickCount();
 	OTGetTimeStamp(&gLsStamp);								/* a new capture: frame times count from here */
+	gLsEpoch = UnixNow();
 	gNFrames = 0;
 	{
 		char s[NC_EVENTLEN], nb[8];

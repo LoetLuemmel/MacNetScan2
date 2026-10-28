@@ -884,7 +884,8 @@ void CFramesPane::Draw(Rect *area)
 		if (frameNo >= 0) DrawC("This frame has been overwritten - the last 400 are kept.");
 		else {
 			s[0] = '\0'; CCatNum(s, NC_FrameTotal()); CCat(s, " frames captured; the last 400 are kept.");
-			DrawC(NC_FrameTotal() > 0 ? s : "Press Scan to capture. Frames are what Listen hears; nothing is sent.");
+			if (NC_Listening()) DrawC("Capturing. Frames are what Listen hears; nothing is sent.");
+			else DrawC(NC_FrameTotal() > 0 ? s : "Press Scan to capture. Frames are what Listen hears; nothing is sent.");
 			MoveTo((short) (r.left + 14), (short) (top + 34));
 			DrawC("Click a frame for its protocol tree and bytes; click it again to follow the capture live.");
 		}

@@ -173,6 +173,12 @@ long		NC_FrameTotal(void);					/* frames so far */
 const NCFrame *NC_Frame(long i);				/* i < NC_FrameTotal(); NULL once overwritten */
 void		NC_FrameSummary(const NCFrame *f, char *src, char *dst, char *proto, char *info);	/* 48, 48, 16, 96 */
 short		NC_FrameDetail(const NCFrame *f, char (*lines)[NC_DETAILLEN], short max);	/* the protocol tree */
+	/* pcap for Wireshark, link type 113 (Linux cooked, SLL): it wants the sender's address and the EtherType
+	   instead of a MAC header - just what Open Transport hands on. Big-endian, as the 68K writes it. */
+#define NC_PCAPREC		(16 + 16 + NC_SNAPLEN)		/* record header, SLL header, the bytes kept */
+unsigned long NC_FrameEpoch(void);				/* when the capture began, Unix seconds (UTC) */
+long		NC_PcapHeader(unsigned char *b);		/* the file header: 24 bytes */
+long		NC_PcapRecord(const NCFrame *f, unsigned char *b);	/* one frame, at most NC_PCAPREC bytes */
 void		NC_MACToStr(const unsigned char *mac, char *out);	/* "00:0c:6c:0b:0e:ad" */
 #define NC_MAXEVENTS	64
 

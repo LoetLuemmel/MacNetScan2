@@ -500,3 +500,54 @@ short NC_FrameDetail(const NCFrame *f, char (*lines)[NC_DETAILLEN], short max)
 #undef H
 	return nl;
 }
+
+/* ------------------------------------------------------------------ pcap */
+
+static void Put16(UInt8 *b, UInt16 v) { b[0] = (UInt8) (v >> 8); b[1] = (UInt8) v; }
+static void Put32(UInt8 *b, UInt32 v) { Put16(b, (UInt16) (v >> 16)); Put16(b + 2, (UInt16) v); }
+
+long NC_PcapHeader(unsigned char *b)
+{
+	Put32(b, 0xA1B2C3D4UL);									/* microsecond timestamps, our byte order */
+	Put16(b + 4, 2); Put16(b + 6, 4);						/* version 2.4 */
+	Put32(b + 8, 0); Put32(b + 12, 0);						/* UTC, no accuracy claim */
+	Put32(b + 16, 16 + NC_SNAPLEN);
+	Put32(b + 20, 113);										/* LINKTYPE_LINUX_SLL */
+	return 24;
+}
+
+	/* SLL's packet type from the destination, as the MAC header would have told it: 0 to us, 1 broadcast,
+	   2 multicast. A flooded frame for another host also reads as 0: its destination MAC is not there. */
+static UInt16 SllType(const NCFrame *f)
+{
+	const UInt8 *p = f->data;
+	long n = f->caplen;
+	switch (f->type) {
+	case 0x0806: return (UInt16) (n >= 8 && Get16(p + 6) == 1 ? 1 : 0);	/* a request is broadcast */
+	case 0x0800:
+		if (n >= 20 && p[16] >= 224 && p[16] <= 239) return 2;
+		return (UInt16) (n >= 20 && p[19] == 255 ? 1 : 0);
+	case 0x86DD: return (UInt16) (n >= 40 && p[24] == 0xFF ? 2 : 0);
+	case 0x88CC: return 2;
+	case 0x809B: return (UInt16) (n >= 13 && p[8] == 255 ? 2 : 0);		/* AppleTalk broadcast is a multicast */
+	case 0x80F3: return 2;
+	}
+	return 0;
+}
+
+long NC_PcapRecord(const NCFrame *f, unsigned char *b)
+{
+	short i;
+	Put32(b, NC_FrameEpoch() + f->us / 1000000UL);
+	Put32(b + 4, f->us % 1000000UL);
+	Put32(b + 8, 16 + (UInt32) f->caplen);
+	Put32(b + 12, 16 + (UInt32) f->len);
+	Put16(b + 16, SllType(f));
+	Put16(b + 18, 1);										/* ARPHRD_ETHER */
+	Put16(b + 20, 6);
+	for (i = 0; i < 6; i++) b[22 + i] = f->src[i];
+	b[28] = b[29] = 0;
+	Put16(b + 30, f->type);
+	for (i = 0; i < f->caplen; i++) b[32 + i] = f->data[i];
+	return 32 + f->caplen;
+}
