@@ -330,6 +330,7 @@ void CATPane::Draw(Rect *area)
 								 : "No router heard - Scan in Listen, Map or Frames listens for RTMP and ZIP.");
 			y += 18;
 		}
+		NC_ATLocalZones();
 		for (k = 0; k < nt; k++) {								/* every network a router named */
 			const NCATRoute *rt = NC_ATRoute(k);
 			const NCATRouter *ro = rt ? NC_ATRouter(rt->router) : NULL;

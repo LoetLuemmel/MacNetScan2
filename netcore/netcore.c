@@ -1767,6 +1767,7 @@ static NCATRouter	gATR[AT_ROUTERS];
 static short		gNATR = 0;
 static NCATRoute	gATRt[AT_ROUTES];
 static short		gNATRt = 0;
+static unsigned long gLocalTick = 0;							/* when NC_ATLocalZones last asked; 0: ask */
 
 static void ATRoute(short router, UInt16 lo, UInt16 hi, UInt8 dist)
 {
@@ -1795,6 +1796,7 @@ static void LsRtmp(const UInt8 *d, long n)						/* d: the DDP data, after the 13
 		OTMemzero(&gATR[r], sizeof(NCATRouter));
 		gATR[r].net = net; gATR[r].node = node;
 		gNATR++;
+		gLocalTick = 0;
 		{ char s[NC_EVENTLEN], nb[8]; s[0] = 0; StrCat(s, "AppleTalk router ");
 		  UToStr(net, nb); StrCat(s, nb); StrCat(s, "."); UToStr(node, nb); StrCat(s, nb); StrCat(s, " announces routes"); LsEvent(s); }
 	}
@@ -1846,6 +1848,32 @@ static void LsZip(const UInt8 *d, long n)
 		ATZone(lo, d + 7, d[6]);
 	}
 	gChange++;
+}
+
+	/* Nobody may ask ZIP for this cable's zones while we listen, so Open Transport is asked - only once a router has
+	   spoken (without one the call waits out ZIP's retries), then every 30 s */
+void NC_ATLocalZones(void)
+{
+	TNetbuf zb;
+	char buf[400];
+	long p;
+	short i, k, o = 0;
+	for (i = 0; i < gNATRt; i++) if (gATRt[i].distance == 0 && gATRt[i].router >= 0) break;
+	if (i == gNATRt || (gLocalTick != 0 && TickCount() - gLocalTick < 1800)) return;
+	gLocalTick = TickCount();
+	if (!OpenAT()) return;
+	zb.buf = (UInt8 *) buf; zb.maxlen = sizeof(buf); zb.len = 0;
+	if (OTATalkGetLocalZones(gAT, &zb) != noErr) return;
+	for (p = 0; p < (long) zb.len; p += 1 + ((unsigned char *) buf)[p]) {	/* length-prefixed names -> "Pit, ApfelNetz" */
+		short len = ((unsigned char *) buf)[p];
+		if (len == 0) break;
+		if (o > 0) {
+			if (o >= 31) break;
+			gATRt[i].zone[o++] = ','; gATRt[i].zone[o++] = ' ';
+		}
+		for (k = 0; k < len && o < 33 && p + 1 + k < (long) zb.len; k++) gATRt[i].zone[o++] = buf[p + 1 + k];
+	}
+	if (o > 0) gATRt[i].zone[o] = 0;
 }
 
 short NC_ATRouterCount(void) { return gNATR; }
@@ -2172,6 +2200,7 @@ long NC_BuildATReport(char *buf, long max)
 		App(buf, &o, max, "\t"); App(buf, &o, max, gEnt[i].info); App(buf, &o, max, CR);
 	}
 	if (gNATRt > 0) {
+		NC_ATLocalZones();
 		App(buf, &o, max, CR "Network\tHops\tVia router\tZone" CR);
 		for (i = 0; i < gNATRt; i++) {
 			UToStr(gATRt[i].rangeLo, nb); App(buf, &o, max, nb);

@@ -140,12 +140,13 @@ typedef struct {
 	unsigned short	rangeLo, rangeHi;
 	unsigned char	distance;				/* hops */
 	short			router;					/* index into NC_ATRouter */
-	char			zone[34];				/* from a ZIP reply; "" not heard */
+	char			zone[34];				/* from a ZIP reply or, for this cable, Open Transport; "" not known */
 } NCATRoute;
 short		NC_ATRouterCount(void);
 const NCATRouter *NC_ATRouter(short i);
 short		NC_ATRouteCount(void);
 const NCATRoute *NC_ATRoute(short i);
+void		NC_ATLocalZones(void);					/* this cable's zones into its route, once a router spoke */
 const char *NC_ATTypeName(short type);			/* "RTMP", "NBP", ... */
 short		NC_ATNodeCount(void);
 const NCATNode *NC_ATNode(short i);
