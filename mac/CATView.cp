@@ -16,10 +16,11 @@
 
 #include <CScrollPane.h>
 
-static const RGBColor kTypeAFP    = { 0xB000, 0x5000, 0xF000 };
-static const RGBColor kTypePrint  = { 0xFFFF, 0x8000, 0x1000 };
-static const RGBColor kTypeWS     = { 0x2000, 0xD000, 0x5000 };
-static const RGBColor kTypeOther  = { 0x7000, 0x9000, 0xC000 };
+static const RGBColor kTypeAFP    = { 0x9999, 0x3333, 0x6666 };			/* the Listen family: plum,	*/
+static const RGBColor kTypePrint  = { 0xCCCC, 0x6666, 0x3333 };			/* rust,					*/
+static const RGBColor kTypeWS     = { 0x3333, 0x9999, 0x6666 };			/* green,					*/
+static const RGBColor kTypeOther  = { 0x6666, 0x9999, 0xCCCC };			/* sky						*/
+static const RGBColor kLocked     = { 0x9999, 0x9999, 0x9999 };			/* a full CD is no warning	*/
 static const RGBColor kBox        = { 0xFFFF, 0xFFFF, 0xFFFF };
 
 static Boolean StartsWith(const char *s, const char *p)
@@ -355,7 +356,7 @@ void CATPane::Draw(Rect *area)
 				SetRect(&bar, (short) (r.left + 500), (short) (y - 8), (short) (r.left + 600), (short) (y - 1));
 				RGBForeColor(&kBarTrack); PaintRect(&bar);
 				bar.right = (short) (bar.left + used);
-				RGBForeColor(used > 90 ? &kRttSlow : &kBarFill); PaintRect(&bar);
+				RGBForeColor(v->locked ? &kLocked : used > 90 ? &kRttSlow : &kBarFill); PaintRect(&bar);
 				s[0] = '\0'; CCatNum(s, used); CCat(s, " %   "); CatSize(s, v->freeK); CCat(s, " free");
 				RGBForeColor(&kInkSoft);
 				MoveTo((short) (r.left + 608), y); DrawTrunc(s, (short) (r.right - r.left - 616));

@@ -90,6 +90,7 @@ typedef struct {
 	char			name[32];
 	unsigned long	serverAdr;				/* AppleTalk net << 16 | node << 8 | socket of its server; 0 local */
 	long			totalK, freeK;
+	Boolean			locked;					/* read-only (a CD): full is no warning */
 } NCVolume;
 
 Boolean		NC_ATAvailable(void);

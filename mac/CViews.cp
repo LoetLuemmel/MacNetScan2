@@ -25,7 +25,7 @@
 #include <Script.h>
 #include <Errors.h>
 
-static const RGBColor kConflict   = { 0xD000, 0x1800, 0x1000 };
+static const RGBColor kConflict   = { 0xCCCC, 0x3333, 0x3333 };
 static const RGBColor kBox        = { 0xFFFF, 0xFFFF, 0xFFFF };
 
 static Boolean StartsWith(const char *s, const char *p)
@@ -57,10 +57,10 @@ static void SectionTitle(short x, short y, const char *t)
 #define kMeters	9
 static const char *kMeterName[kMeters] = { "ARP", "Broadcast", "Multicast", "DHCP", "NetBIOS", "IPv6", "LLDP",
 										   "AppleTalk", "AARP" };
-static const RGBColor kMeterColour[kMeters] = {
-	{ 0xFFFF, 0xB000, 0x2000 }, { 0x3000, 0x8000, 0xFFFF }, { 0x2000, 0xC800, 0xD800 }, { 0x2000, 0xD000, 0x5000 },
-	{ 0x6000, 0x9800, 0xFFFF }, { 0x1000, 0xB000, 0xA000 }, { 0xFFFF, 0x7000, 0x5000 },
-	{ 0xB000, 0x5000, 0xF000 }, { 0xD000, 0x8000, 0xF000 }
+static const RGBColor kMeterColour[kMeters] = {				/* one family: ochre, steel, petrol, green, sky, */
+	{ 0xCCCC, 0x9999, 0x3333 }, { 0x3333, 0x6666, 0x9999 }, { 0x3333, 0x9999, 0x9999 }, { 0x3333, 0x9999, 0x6666 },
+	{ 0x6666, 0x9999, 0xCCCC }, { 0x6666, 0x9999, 0x3333 }, { 0xCCCC, 0x6666, 0x3333 },	/* olive, rust,	*/
+	{ 0x9999, 0x3333, 0x6666 }, { 0x9999, 0x6666, 0x9999 }								/* plum, mauve	*/
 };
 
 static void MeterValues(long v[kMeters])
@@ -247,7 +247,7 @@ void CListenPane::Draw(Rect *area)
 
 static const char *kGroupName[NC_TO_COUNT] = { "Unicast", "Broadcast", "mDNS", "IPv6 multicast", "LLDP",
 											   "Multicast", "AppleTalk" };
-static const RGBColor kMcOther = { 0x9000, 0x9000, 0xA000 };
+static const RGBColor kMcOther = { 0x9999, 0x9999, 0x9999 };
 static const RGBColor *kEdgeColour[NC_TO_COUNT] = { &kInkSoft, &kMeterColour[1], &kMeterColour[2], &kMeterColour[5],
 													&kMeterColour[6], &kMcOther, &kMeterColour[7] };
 static const short kSin16[17] = { 0, 98, 195, 290, 383, 471, 556, 634, 707, 773, 831, 882, 924, 957, 981, 995, 1000 };

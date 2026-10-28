@@ -1169,6 +1169,7 @@ void NC_VolumeRead(void)
 		gVol[gNVol].totalK = (long) pb.volumeParam.ioVNmAlBlks * (pb.volumeParam.ioVAlBlkSiz / 512) / 2;
 		gVol[gNVol].freeK = (long) pb.volumeParam.ioVFrBlk * (pb.volumeParam.ioVAlBlkSiz / 512) / 2;
 		gVol[gNVol].serverAdr = 0;
+		gVol[gNVol].locked = (Boolean) ((pb.volumeParam.ioVAtrb & 0x8080) != 0);	/* hardware or software lock */
 		{
 			XVolParam xp;
 			OTMemzero(&xp, sizeof(xp));

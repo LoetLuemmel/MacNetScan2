@@ -21,16 +21,19 @@
 #define kColSvc			292				/* one LED per service, kSvcPitch apart			*/
 #define kSvcPitch		20
 
-	// Colours: a dark instrument strip over a light work area.
+	// Colours: a dark instrument strip over a light work area. Greys for surfaces and text, one accent (blue) for
+	// selection, muted status colours, category colours of one family. Every colour is a step of the 8-bit
+	// screen's 6x6x6 cube ($00 $33 $66 $99 $CC $FF): QuickDraw would otherwise round it to the nearest - and louder -
+	// cube entry. Shades of grey come from the CLUT's grey ramp.
 static const RGBColor kStrip     = { 0x2600, 0x2B00, 0x3400 };
 static const RGBColor kStripLine = { 0x4A00, 0x5200, 0x6000 };
 static const RGBColor kStripText = { 0xD000, 0xD600, 0xE000 };
 static const RGBColor kBtnDown   = { 0x1600, 0x1A00, 0x2000 };
 static const RGBColor kDimIcon   = { 0x5800, 0x5E00, 0x6800 };
-static const RGBColor kGo        = { 0x2000, 0xD000, 0x5000 };
-static const RGBColor kHalt      = { 0xF000, 0x3800, 0x3000 };
+static const RGBColor kGo        = { 0x3333, 0xCCCC, 0x6666 };
+static const RGBColor kHalt      = { 0xCCCC, 0x3333, 0x3333 };
 static const RGBColor kIconLight = { 0xC800, 0xD000, 0xDC00 };
-static const RGBColor kAccent    = { 0x1E00, 0x7800, 0xE800 };
+static const RGBColor kAccent    = { 0x3333, 0x6666, 0xCCCC };
 static const RGBColor kTabOff    = { 0x3400, 0x3A00, 0x4600 };
 static const RGBColor kViewBg    = { 0xF600, 0xF700, 0xF900 };
 static const RGBColor kRowAlt    = { 0xEA00, 0xEE00, 0xF400 };
@@ -39,15 +42,15 @@ static const RGBColor kInkSoft   = { 0x6000, 0x6600, 0x7000 };
 static const RGBColor kStatusBg  = { 0xE200, 0xE400, 0xE800 };
 static const RGBColor kStatusLn  = { 0xB000, 0xB400, 0xBC00 };
 static const RGBColor kBarTrack  = { 0xC400, 0xC800, 0xD000 };
-static const RGBColor kBarFill   = { 0x1E00, 0x9000, 0xF000 };
-static const RGBColor kLedAct    = { 0xFFFF, 0xB000, 0x2000 };
-static const RGBColor kAlive     = { 0x2000, 0xD000, 0x5000 };
-static const RGBColor kSelRow    = { 0xC800, 0xDC00, 0xFFFF };
+static const RGBColor kBarFill   = { 0x6666, 0x9999, 0xCCCC };
+static const RGBColor kLedAct    = { 0xFFFF, 0xCCCC, 0x3333 };
+static const RGBColor kAlive     = { 0x3333, 0xCCCC, 0x6666 };
+static const RGBColor kSelRow    = { 0xCCCC, 0xCCCC, 0xFFFF };
 static const RGBColor kHeaderBg  = { 0xE600, 0xE900, 0xEE00 };
 static const RGBColor kDetailBg  = { 0xEC00, 0xEE00, 0xF200 };
-static const RGBColor kRttGood   = { 0x2000, 0xC000, 0x5000 };
-static const RGBColor kRttFair   = { 0xE000, 0xC000, 0x1000 };
-static const RGBColor kRttSlow   = { 0xF000, 0x6000, 0x2000 };
+static const RGBColor kRttGood   = { 0x3333, 0x9999, 0x6666 };
+static const RGBColor kRttFair   = { 0xCCCC, 0x9999, 0x3333 };
+static const RGBColor kRttSlow   = { 0xCCCC, 0x6666, 0x3333 };
 static const RGBColor kWhiteC    = { 0xFFFF, 0xFFFF, 0xFFFF };
 static const RGBColor kBlackC    = { 0x0000, 0x0000, 0x0000 };
 
@@ -57,19 +60,19 @@ static const char *kViewName[kViewCount] = { "IP Network", "AppleTalk", "Listen"
 typedef struct { unsigned short port; const char *shortName; RGBColor colour; } SvcLook;
 
 static const SvcLook kSvcLook[] = {
-	{ 9000, "AB",  { 0xFFFF, 0xB000, 0x2000 } },	/* AppleBridge			*/
-	{   80, "WEB", { 0x2000, 0xD000, 0x5000 } },
-	{  443, "TLS", { 0x2000, 0xB000, 0x9000 } },
-	{  445, "SMB", { 0x3000, 0x8000, 0xFFFF } },
-	{  139, "NB",  { 0x6000, 0x9800, 0xFFFF } },	/* NetBIOS				*/
-	{  548, "AFP", { 0xB000, 0x5000, 0xF000 } },	/* AppleShare			*/
-	{   22, "SSH", { 0x2000, 0xC800, 0xD800 } },
-	{  631, "IPP", { 0xFFFF, 0x8000, 0x1000 } },	/* printers				*/
-	{   21, "FTP", { 0xE800, 0xD000, 0x1000 } },
-	{   23, "TEL", { 0xF000, 0x3800, 0x3000 } }		/* Telnet				*/
+	{ 9000, "AB",  { 0xCCCC, 0x9999, 0x3333 } },	/* AppleBridge			*/
+	{   80, "WEB", { 0x3333, 0x9999, 0x6666 } },
+	{  443, "TLS", { 0x3333, 0x9999, 0x9999 } },
+	{  445, "SMB", { 0x3333, 0x6666, 0x9999 } },
+	{  139, "NB",  { 0x6666, 0x9999, 0xCCCC } },	/* NetBIOS				*/
+	{  548, "AFP", { 0x9999, 0x3333, 0x6666 } },	/* AppleShare			*/
+	{   22, "SSH", { 0x6666, 0x6666, 0x9999 } },
+	{  631, "IPP", { 0xCCCC, 0x6666, 0x3333 } },	/* printers				*/
+	{   21, "FTP", { 0x9999, 0x9999, 0x3333 } },
+	{   23, "TEL", { 0xCCCC, 0x3333, 0x3333 } }		/* Telnet				*/
 };
 #define kSvcLookCount	((short) (sizeof(kSvcLook) / sizeof(kSvcLook[0])))
-static const RGBColor kSvcOther = { 0xA000, 0xA000, 0xA800 };
+static const RGBColor kSvcOther = { 0x9999, 0x9999, 0x9999 };
 
 static void SvcFor(short portIndex, const char **shortName, const RGBColor **colour)
 {
