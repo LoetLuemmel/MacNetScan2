@@ -12,7 +12,7 @@ System 7.6.1 guest in Basilisk II through [AppleBridge](https://github.com/LoetL
 |---|---|
 | **IP Network** | Asynchronous TCP-connect sweep of the own /24 against ten well-known ports (AppleBridge, HTTP, HTTPS, SMB, NetBIOS, AFP, SSH, IPP, FTP, Telnet). Names from NetBIOS, multicast DNS or reverse DNS. Round-trip times stamped in the Open Transport notifier, to 0.1 ms. One LED per service, a detail panel per host. |
 | **AppleTalk** | This Mac's node and zone; every NBP entity in every zone with a type LED. |
-| **Listen** | Passive - sends nothing. ARP, IP broadcasts/multicasts, DHCP, NetBIOS, AppleTalk and AARP that reach this Mac: protocol meters, a station table (MAC, IP, AppleTalk address), an event log (new stations, gratuitous ARP, DHCP, IP conflicts). |
+| **Listen** | Passive - sends nothing but four multicast joins. ARP, IP broadcasts/multicasts (mDNS), DHCP, NetBIOS, IPv6, LLDP, AppleTalk and AARP that reach this Mac: protocol meters, a station table (MAC, IP, AppleTalk address or LLDP system name), an event log (new stations, gratuitous ARP, DHCP, IP conflicts, LLDP neighbours). |
 | **Tools** | Ping (TCP connect), DNS lookup (both directions), traceroute (ICMP). |
 
 Plus: Export / Copy of a tab-delimited report, **Scan › Options** (range, timeout, probes at once, ports; kept in
@@ -52,17 +52,24 @@ Why each step is there: the comments in `netcore/netcore.c`, `tools/patch_otlibs
 
 ## Under Basilisk II
 
-The Listen view only binds and receives - and that is already all there is to have. Raw mode (`I_OTSetRawMode`) and
-promiscuous mode (`OPT_SETPROMISCUOUS` at `LNK_TPI`) never return and freeze the guest (flushed per-call trail in
-`probe/sniff_main.c`), but they would add nothing:
+The Listen view binds, joins four multicast groups and receives - and that is all there is to have. Raw mode
+(`I_OTSetRawMode`) and promiscuous mode (`OPT_SETPROMISCUOUS` at `LNK_TPI`) never return and freeze the guest
+(flushed per-call trail in `probe/sniff_main.c`), but they would add nothing:
 
-- With the `etherhelper` backend, `etherhelpertool` opens bpf on the host interface in promiscuous mode, unfiltered.
-  Basilisk's `.ENET` driver hands every frame to the handler bound for its EtherType without checking the
-  destination MAC, and the guest uses the host interface's MAC - so it also sees the host's own traffic.
-- Open Transport does not filter by destination MAC either. Proven: another host pinged a spare IP mapped to a made-up
-  MAC by a static ARP entry; the switch flooded the frames and SniffProbe, binds and receives only, got every one.
+- With the `etherhelper` backend, `etherhelpertool` opens bpf on the host interface in promiscuous mode, unfiltered,
+  with `BIOCSSEESENT` off. Basilisk's `.ENET` driver hands every frame to the handler bound for its EtherType without
+  checking the destination MAC, and the guest uses the host interface's MAC - so it also sees what the host receives
+  (not what the host sends).
+- Open Transport does not filter unicast by destination MAC either. Proven: another host pinged a spare IP mapped to a
+  made-up MAC by a static ARP entry; the switch flooded the frames and SniffProbe, binds and receives only, got every
+  one.
 - Raw mode would add only the destination MAC; the sender MAC comes with every frame anyway. More protocols are one
   more bind away (each bind attaches its EtherType at the driver).
+
+**Multicast is the exception:** Open Transport drops every group nobody joined - the multicast meter stayed at 0 with
+mDNS on the wire, while AppleTalk's own group arrived. `OPT_ADDMCAST` at `LNK_ENET` answers `TBADOPT`; at `LNK_TPI` it
+returns `T_SUCCESS` without a hang. Listen joins mDNS (`01:00:5e:00:00:fb`), IPv6 all-nodes and mDNS
+(`33:33:00:00:00:01`, `33:33:00:00:00:fb`) and LLDP (`01:80:c2:00:00:0e`) that way; the switch then shows up by name.
 
 The freeze is not in Basilisk: its `.ENET` driver answers every unknown control call with `controlErr` and completes
 it (`BasiliskII/src/ether.cpp`). It is inside Open Transport's layer above that driver.

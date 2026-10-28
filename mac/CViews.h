@@ -37,9 +37,9 @@ public:
 protected:
 	void			DrawMeters(Boolean all);
 
-	long			last[7];				// the counters at the last pulse
-	unsigned long	litUntil[7];
-	Boolean			lit[7];
+	long			last[9];				// the counters at the last pulse
+	unsigned long	litUntil[9];
+	Boolean			lit[9];
 };
 
 	// Tools: what ping, DNS or traceroute found, below the host field and its buttons.

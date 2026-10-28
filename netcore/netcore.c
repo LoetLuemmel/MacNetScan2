@@ -44,6 +44,13 @@ static void StrCopy(char *dst, const char *src, short max)
 	dst[i] = 0;
 }
 
+static Boolean StrEqual(const char *a, const char *b)
+{
+	short i = 0;
+	while (a[i] && a[i] == b[i]) i++;
+	return (Boolean) (a[i] == b[i]);
+}
+
 static void TrimRight(char *s)
 {
 	short e = 0;
@@ -1233,23 +1240,33 @@ const char *NC_ToolMessage(void) { return gToolMsg; }
 
 /* ------------------------------------------------------------------ listen: what reaches this Mac anyway */
 
-/* Passive: Ethernet endpoints bound to ARP, IPv4, and AppleTalk and AARP over 802.2 SNAP, read without blocking.
-   Measured 2026-10-27 under Basilisk II (MacNetScan2/probe/sniff_main.c, five runs): binds and receives are safe beside
+/* Passive: Ethernet endpoints bound to ARP, IPv4, IPv6, LLDP, and AppleTalk and AARP over 802.2 SNAP, read without
+   blocking. Measured under Basilisk II (MacNetScan2/probe/sniff_main.c, six runs): binds and receives are safe beside
    the TCP/IP stack; OPT_SETRAWMODE and OPT_SETPROMISCUOUS answer TBADOPT at level LNK_ENET and NEVER RETURN at LNK_TPI,
-   and the I_OTSetRawMode ioctl never returns either - both froze the guest. So nothing but OTOpenEndpoint, OTBind and
-   OTRcvUData is ever called here. Frames come without their MAC header: the sender's MAC is the receive address, the
-   protocol the bound SAP. What arrives: this Mac's own traffic, broadcasts, and what the host's network card hands on. */
+   and the I_OTSetRawMode ioctl never returns either - both froze the guest. They would add nothing: etherhelper reads
+   the host card promiscuously and Basilisk hands on every frame. Open Transport does drop multicast groups nobody
+   joined (the multicast meter stayed 0 beside mDNS on the wire); OPT_ADDMCAST at LNK_TPI joins one - noErr, T_SUCCESS,
+   no hang (run 6, 2026-10-28) - and mDNS, IPv6 multicast and LLDP arrive. Frames come without their MAC header: the
+   sender's MAC is the receive address, the protocol the bound SAP. */
 
 #define NC_MAXSTATIONS	128
 #define NC_EVENTLEN		80
 #define LS_BUFSIZE		1600
 
-enum { LS_ARP = 0, LS_IP, LS_DDP, LS_AARP, LS_COUNT };
-static const UInt16 kLsSap[LS_COUNT] = { 0x0806, 0x0800, 0x00AA, 0x00AA };
+enum { LS_ARP = 0, LS_IP, LS_DDP, LS_AARP, LS_IP6, LS_LLDP, LS_COUNT };
+static const UInt16 kLsSap[LS_COUNT] = { 0x0806, 0x0800, 0x00AA, 0x00AA, 0x86DD, 0x88CC };
 static const UInt8 kLsSnap[LS_COUNT][5] = {
 	{ 0, 0, 0, 0, 0 }, { 0, 0, 0, 0, 0 },
 	{ 0x08, 0x00, 0x07, 0x80, 0x9B },				/* AppleTalk Phase 2 */
-	{ 0x00, 0x00, 0x00, 0x80, 0xF3 }				/* AARP */
+	{ 0x00, 0x00, 0x00, 0x80, 0xF3 },				/* AARP */
+	{ 0, 0, 0, 0, 0 }, { 0, 0, 0, 0, 0 }
+};
+
+static const struct { short ep; UInt8 group[6]; } kLsJoin[] = {
+	{ LS_IP,   { 0x01, 0x00, 0x5E, 0x00, 0x00, 0xFB } },		/* mDNS 224.0.0.251 */
+	{ LS_IP6,  { 0x33, 0x33, 0x00, 0x00, 0x00, 0x01 } },		/* IPv6 all nodes */
+	{ LS_IP6,  { 0x33, 0x33, 0x00, 0x00, 0x00, 0xFB } },		/* mDNS ff02::fb */
+	{ LS_LLDP, { 0x01, 0x80, 0xC2, 0x00, 0x00, 0x0E } }		/* LLDP nearest bridge */
 };
 
 static EndpointRef		gLsEp[LS_COUNT];
@@ -1414,6 +1431,64 @@ static void LsAarp(const UInt8 *mac, const UInt8 *p, long n)
 	if (mac) {}
 }
 
+static void LsIp6(const UInt8 *mac, const UInt8 *p, long n)
+{
+	NCStation *st;
+	if (n < 40 || (p[0] >> 4) != 6) return;
+	gLs.ipv6++;
+	if (p[24] == 0xFF) gLs.ipMulticast++;				/* destination ff00::/8 */
+	st = LsStation(mac);
+	LsTouch(st, NC_SEEN_IP6);
+}
+
+	/* LLDP: TLVs of a 7-bit type and a 9-bit length; 5 is the system name, 4 the port description */
+static void LsLldp(const UInt8 *mac, const UInt8 *p, long n)
+{
+	NCStation *st;
+	char port[24], s[NC_EVENTLEN];
+	long o = 0;
+	short t, len, i;
+	gLs.lldp++;
+	st = LsStation(mac);
+	LsTouch(st, NC_SEEN_LLDP);
+	if (!st) return;
+	port[0] = 0;
+	s[0] = 0;											/* the name as sent, to compare */
+	while (o + 2 <= n) {
+		t = (short) (p[o] >> 1); len = (short) (((p[o] & 1) << 8) | p[o + 1]);
+		o += 2;
+		if (t == 0 || o + len > n) break;
+		if (t == 5 || t == 4) {
+			char *d = (t == 5) ? s : port;
+			for (i = 0; i < len && i < 23; i++) d[i] = (char) (p[o + i] >= ' ' ? p[o + i] : '.');
+			d[i] = 0;
+		}
+		o += len;
+	}
+	if (s[0] && !StrEqual(s, st->name)) {
+		StrCopy(st->name, s, sizeof(st->name));
+		s[0] = 0; StrCat(s, "LLDP: "); StrCat(s, st->name);
+		if (port[0]) { StrCat(s, ", "); StrCat(s, port); }
+		LsEvent(s);
+	}
+}
+
+	/* OPT_ADDMCAST at LNK_TPI: a TOption whose value is the 6-byte group; at LNK_ENET it is TBADOPT */
+static OSStatus LsJoin(EndpointRef ep, const UInt8 *group)
+{
+	struct { UInt32 len; UInt32 level; UInt32 name; UInt32 status; UInt8 addr[6]; UInt8 pad[2]; } opt;
+	TOptMgmt req, ret;
+	OSStatus err;
+	short i;
+	opt.len = 22; opt.level = LNK_TPI; opt.name = OPT_ADDMCAST; opt.status = 0;
+	for (i = 0; i < 6; i++) opt.addr[i] = group[i];
+	opt.pad[0] = opt.pad[1] = 0;
+	req.opt.buf = (UInt8 *) &opt; req.opt.len = 22; req.flags = T_NEGOTIATE;
+	ret.opt.buf = (UInt8 *) &opt; ret.opt.maxlen = sizeof(opt);
+	err = OTOptionManagement(ep, &req, &ret);
+	return (err == noErr && opt.status != T_SUCCESS) ? (OSStatus) -1 : err;
+}
+
 long NC_ListenStart(void)
 {
 	struct T8022Address a, got;
@@ -1438,13 +1513,21 @@ long NC_ListenStart(void)
 		err = OTBind(gLsEp[k], &req, &ret);
 		if (err != noErr) { OTCloseProvider(gLsEp[k]); gLsEp[k] = NULL; last = err; continue; }
 		if (k == LS_ARP) BlockMove(got.fHWAddr, gLsMyMAC, 6);
-		OTSetNonBlocking(gLsEp[k]);
 		opened++;
 	}
 	if (opened == 0) return last != noErr ? last : -1;
+	gLs.joined = 0;
+	for (k = 0; k < (short) (sizeof(kLsJoin) / sizeof(kLsJoin[0])); k++)	/* still blocking, as SniffProbe measured */
+		if (gLsEp[kLsJoin[k].ep] && LsJoin(gLsEp[kLsJoin[k].ep], kLsJoin[k].group) == noErr) gLs.joined++;
+	for (k = 0; k < LS_COUNT; k++) if (gLsEp[k]) OTSetNonBlocking(gLsEp[k]);
 	gListening = true;
 	gLsStart = TickCount();
-	LsEvent("listening");
+	{
+		char s[NC_EVENTLEN], nb[8];
+		UToStr((unsigned long) gLs.joined, nb);
+		s[0] = 0; StrCat(s, "listening, "); StrCat(s, nb); StrCat(s, " multicast groups joined");
+		LsEvent(s);
+	}
 	return noErr;
 }
 
@@ -1482,6 +1565,8 @@ void NC_ListenIdle(void)
 				case LS_IP:		LsIp(src.fHWAddr, gLsBuf, (long) rcv.udata.len); break;
 				case LS_DDP:	LsDdp(src.fHWAddr, gLsBuf, (long) rcv.udata.len); break;
 				case LS_AARP:	LsAarp(src.fHWAddr, gLsBuf, (long) rcv.udata.len); break;
+				case LS_IP6:	LsIp6(src.fHWAddr, gLsBuf, (long) rcv.udata.len); break;
+				case LS_LLDP:	LsLldp(src.fHWAddr, gLsBuf, (long) rcv.udata.len); break;
 			}
 		}
 	}

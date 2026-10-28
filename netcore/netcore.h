@@ -123,11 +123,14 @@ typedef struct {
 	char			seen;						/* NC_SEEN_ bits */
 	long			packets;
 	unsigned long	firstTick, lastTick;
+	char			name[24];					/* LLDP system name, "" if none */
 } NCStation;
-enum { NC_SEEN_ARP = 1, NC_SEEN_IP = 2, NC_SEEN_AT = 4, NC_SEEN_SELF = 8 };
+enum { NC_SEEN_ARP = 1, NC_SEEN_IP = 2, NC_SEEN_AT = 4, NC_SEEN_SELF = 8, NC_SEEN_IP6 = 16, NC_SEEN_LLDP = 32 };
 
 typedef struct {
 	long		total, arp, ipBroadcast, ipMulticast, ipUnicast, dhcp, netbios, ddp, aarp, conflicts;
+	long		ipv6, lldp;
+	short		joined;							/* multicast groups joined (mDNS, LLDP, IPv6) */
 } NCListenStats;
 
 long		NC_ListenStart(void);					/* opens the endpoints; 0 or an Open Transport error */

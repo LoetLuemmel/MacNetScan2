@@ -143,18 +143,21 @@ void CATPane::Draw(Rect *area)
 
  ******************************************************************************/
 
-static const char *kMeterName[7] = { "ARP", "Broadcast", "Multicast", "DHCP", "NetBIOS", "AppleTalk", "AARP" };
-static const RGBColor kMeterColour[7] = {
+#define kMeters	9
+static const char *kMeterName[kMeters] = { "ARP", "Broadcast", "Multicast", "DHCP", "NetBIOS", "IPv6", "LLDP",
+										   "AppleTalk", "AARP" };
+static const RGBColor kMeterColour[kMeters] = {
 	{ 0xFFFF, 0xB000, 0x2000 }, { 0x3000, 0x8000, 0xFFFF }, { 0x2000, 0xC800, 0xD800 }, { 0x2000, 0xD000, 0x5000 },
-	{ 0x6000, 0x9800, 0xFFFF }, { 0xB000, 0x5000, 0xF000 }, { 0xD000, 0x8000, 0xF000 }
+	{ 0x6000, 0x9800, 0xFFFF }, { 0x1000, 0xB000, 0xA000 }, { 0xFFFF, 0x7000, 0x5000 },
+	{ 0xB000, 0x5000, 0xF000 }, { 0xD000, 0x8000, 0xF000 }
 };
 
-static void MeterValues(long v[7])
+static void MeterValues(long v[kMeters])
 {
 	NCListenStats s;
 	NC_ListenGetStats(&s);
 	v[0] = s.arp; v[1] = s.ipBroadcast; v[2] = s.ipMulticast; v[3] = s.dhcp;
-	v[4] = s.netbios; v[5] = s.ddp; v[6] = s.aarp;
+	v[4] = s.netbios; v[5] = s.ipv6; v[6] = s.lldp; v[7] = s.ddp; v[8] = s.aarp;
 }
 
 CListenPane::CListenPane(CView *anEnclosure, CBureaucrat *aSupervisor, short aWidth, short aHeight,
@@ -162,39 +165,39 @@ CListenPane::CListenPane(CView *anEnclosure, CBureaucrat *aSupervisor, short aWi
 	: CPane(anEnclosure, aSupervisor, aWidth, aHeight, aHEncl, aVEncl, sizELASTIC, sizELASTIC)
 {
 	short i;
-	for (i = 0; i < 7; i++) { last[i] = 0; litUntil[i] = 0; lit[i] = FALSE; }
+	for (i = 0; i < kMeters; i++) { last[i] = 0; litUntil[i] = 0; lit[i] = FALSE; }
 }
 
 void CListenPane::DrawMeters(Boolean all)
 {
 	Rect r, k, cell;
-	long v[7];
+	long v[kMeters];
 	char s[24];
 	short i, x;
 	unsigned long now = TickCount();
 
 	FrameToQDR(&frame, &r);
 	MeterValues(v);
-	for (i = 0; i < 7; i++) {
+	for (i = 0; i < kMeters; i++) {
 		Boolean on = (Boolean) (now < litUntil[i]);
 		if (!all && on == lit[i] && v[i] == last[i]) continue;
 		lit[i] = on;
-		x = (short) (r.left + 14 + i * 100);
-		SetRect(&cell, x, (short) (r.top + 8), (short) (x + 96), (short) (r.top + 44));
+		x = (short) (r.left + 14 + i * 77);
+		SetRect(&cell, x, (short) (r.top + 8), (short) (x + 73), (short) (r.top + 44));
 		RGBForeColor(&kBox);
 		PaintRoundRect(&cell, 8, 8);
 		RGBForeColor(&kStatusLn);
 		FrameRoundRect(&cell, 8, 8);
-		SetRect(&k, (short) (x + 8), (short) (r.top + 14), (short) (x + 22), (short) (r.top + 28));
+		SetRect(&k, (short) (x + 6), (short) (r.top + 14), (short) (x + 18), (short) (r.top + 26));
 		DrawLed(&k, &kMeterColour[i], on);
 		TextFont(kGeneva); TextSize(9); TextFace(normal);
 		RGBForeColor(&kInkSoft);
-		MoveTo((short) (x + 28), (short) (r.top + 24));
+		MoveTo((short) (x + 22), (short) (r.top + 24));
 		DrawC(kMeterName[i]);
 		s[0] = '\0'; CCatNum(s, v[i]);
 		TextFace(bold);
 		RGBForeColor(&kInk);
-		MoveTo((short) (x + 28), (short) (r.top + 38));
+		MoveTo((short) (x + 22), (short) (r.top + 38));
 		DrawC(s);
 		TextFace(normal);
 	}
@@ -203,12 +206,12 @@ void CListenPane::DrawMeters(Boolean all)
 
 void CListenPane::Pulse()
 {
-	long v[7];
+	long v[kMeters];
 	short i;
 	unsigned long now = TickCount();
 	Boolean changed = FALSE;
 	MeterValues(v);
-	for (i = 0; i < 7; i++) {
+	for (i = 0; i < kMeters; i++) {
 		if (v[i] != last[i]) litUntil[i] = now + 8;
 		if (v[i] != last[i] || (Boolean) (now < litUntil[i]) != lit[i]) changed = TRUE;
 	}
@@ -217,7 +220,7 @@ void CListenPane::Pulse()
 		Prepare();
 		DrawMeters(FALSE);
 	}
-	for (i = 0; i < 7; i++) last[i] = v[i];
+	for (i = 0; i < kMeters; i++) last[i] = v[i];
 }
 
 void CListenPane::Draw(Rect *area)
@@ -240,7 +243,7 @@ void CListenPane::Draw(Rect *area)
 	s[0] = '\0'; CCat(s, "Stations seen  "); CCatNum(s, n);
 	SectionTitle((short) (r.left + 14), y, s);
 	SectionTitle((short) (r.left + 160), y, "IP address");
-	SectionTitle((short) (r.left + 270), y, "AppleTalk");
+	SectionTitle((short) (r.left + 270), y, "AppleTalk/LLDP");
 	SectionTitle((short) (r.left + 360), y, "Heard");
 	SectionTitle((short) (r.left + 470), y, "Packets");
 	SectionTitle((short) (r.left + 560), y, "Last heard");
@@ -276,12 +279,16 @@ void CListenPane::Draw(Rect *area)
 		MoveTo((short) (r.left + 160), y); DrawC(s);
 		s[0] = '\0';
 		if (st->atNet) { CCatNum(s, st->atNet); CCat(s, "."); CCatNum(s, st->atNode); }
-		MoveTo((short) (r.left + 270), y); DrawC(s);
+		MoveTo((short) (r.left + 270), y);
+		if (s[0] || !st->name[0]) DrawC(s);
+		else { TextFont(kGeneva); DrawTrunc(st->name, 86); }	/* a switch has a name, not a node */
 		TextFont(kGeneva);
 		s[0] = '\0';
 		if (st->seen & NC_SEEN_SELF) CCat(s, "this Mac ");
 		if (st->seen & NC_SEEN_ARP) CCat(s, "ARP ");
 		if (st->seen & NC_SEEN_IP) CCat(s, "IP ");
+		if (st->seen & NC_SEEN_IP6) CCat(s, "IPv6 ");
+		if (st->seen & NC_SEEN_LLDP) CCat(s, "LLDP ");
 		if (st->seen & NC_SEEN_AT) CCat(s, "AppleTalk");
 		RGBForeColor(&kInkSoft);
 		MoveTo((short) (r.left + 360), y); DrawC(s);
@@ -296,7 +303,7 @@ void CListenPane::Draw(Rect *area)
 		RGBForeColor(&kInkSoft);
 		MoveTo((short) (r.left + 28), y);
 		DrawC(NC_Listening() ? "Listening - nothing heard yet." :
-			  "Press Scan to listen. MacNetScan sends nothing; it hears ARP, broadcasts and AppleTalk.");
+			  "Press Scan to listen. MacNetScan sends nothing; it hears ARP, broadcasts, multicast, IPv6, LLDP and AppleTalk.");
 	}
 
 	y = (short) (r.top + 272);

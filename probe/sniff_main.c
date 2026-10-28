@@ -13,7 +13,11 @@
    (value and pointer form), promiscuous mode at three levels, and decodes header-less payloads by the bound SAP.
    Run 2/3: the ioctl (value form, on the unbound endpoint) never returns - the guest hangs at 100 % CPU. Run 4 drops
    it and keeps the trail: one flushed line per call in "SniffProbe trail". Run 4: OPT_SETPROMISCUOUS at LNK_TPI hangs
-   the same way. Run 5: binds and receives only (the safe part of run 1); the unbound endpoint is gone. */
+   the same way. Run 5: binds and receives only (the safe part of run 1); the unbound endpoint is gone.
+   Run 6 (2026-10-28): unicast to a foreign MAC arrives (proven), multicast never did - the multicast counter stayed 0
+   with mDNS on the wire, and neither Basilisk II nor etherhelpertool filter, so Open Transport drops groups nobody
+   joined. Joins them with OPT_ADDMCAST at LNK_ENET (the level that answered, not the one that hung) - mDNS on the IPv4
+   endpoint, LLDP and IPv6 on two new endpoints - each call between two trail lines. */
 
 #define OTSTUBS_NO_ANSI
 #include "OTCompat.h"
@@ -46,16 +50,38 @@ static Ep gEp[] = {
 	{ "ARP ", true,  0x0806, false, { 0 } },
 	{ "IPv4", true,  0x0800, false, { 0 } },
 	{ "DDP ", true,  0x00AA, true,  { 0x08, 0x00, 0x07, 0x80, 0x9B } },
-	{ "AARP", true,  0x00AA, true,  { 0x00, 0x00, 0x00, 0x80, 0xF3 } }
+	{ "AARP", true,  0x00AA, true,  { 0x00, 0x00, 0x00, 0x80, 0xF3 } },
+	{ "LLDP", true,  0x88CC, false, { 0 } },
+	{ "IPv6", true,  0x86DD, false, { 0 } }
 };
 #define NEP ((short) (sizeof(gEp) / sizeof(gEp[0])))
+
+typedef struct {
+	const char	*label;
+	short		ep;										/* index into gEp */
+	UInt8		addr[6];
+	UInt32		level;
+	OSStatus	err;									/* 1 = not tried */
+	UInt32		status;
+} Mc;
+
+/* Run 6a: all four at LNK_ENET answered TBADOPT (-3151), no hang, still no multicast. Run 6b: one join at LNK_TPI,
+   the 802.2 module - where OPT_SETPROMISCUOUS hung in run 4; a join only needs the driver's AddMulti, which the
+   AppleTalk stack uses: noErr, status T_SUCCESS, and mDNS to 224.0.0.251 arrived at once. Run 6c: all four at TPI. */
+static Mc gMc[] = {
+	{ "mDNS4", 1, { 0x01, 0x00, 0x5E, 0x00, 0x00, 0xFB }, LNK_TPI },
+	{ "LLDP",  4, { 0x01, 0x80, 0xC2, 0x00, 0x00, 0x0E }, LNK_TPI },
+	{ "v6all", 5, { 0x33, 0x33, 0x00, 0x00, 0x00, 0x01 }, LNK_TPI },
+	{ "mDNS6", 5, { 0x33, 0x33, 0x00, 0x00, 0x00, 0xFB }, LNK_TPI }
+};
+#define NMC ((short) (sizeof(gMc) / sizeof(gMc[0])))
 
 static WindowPtr	gWin;
 static UInt8		gMyMAC[6];
 static InetHost		gMyIP = 0;
 static Boolean		gHaveMAC = false;
 static long			gUni = 0, gForeign = 0, gMulti = 0, gBroad = 0;
-static long			gArp = 0, gIPv4 = 0, gIPv6 = 0, gAT = 0, gAarp = 0, gOther = 0;
+static long			gArp = 0, gIPv4 = 0, gIPv6 = 0, gAT = 0, gAarp = 0, gLldp = 0, gOther = 0;
 static char			(*gLines)[LINELEN] = NULL;			/* heap: 19 KB would crowd the A5 globals */
 static long			gNLine = 0;
 static long			gStart;
@@ -200,6 +226,29 @@ static void CloseEp(Ep *e)
 	e->ep = NULL;
 }
 
+/* OPT_ADDMCAST: a TOption whose value is the 6-byte group address (len 16 + 6), at the level the entry names. */
+static void AddMcast(Mc *m)
+{
+	struct { UInt32 len; UInt32 level; UInt32 name; UInt32 status; UInt8 addr[6]; UInt8 pad[2]; } opt;
+	TOptMgmt req, ret;
+	Ep *e = &gEp[m->ep];
+	short i;
+	m->err = 1; m->status = 0;
+	if (!e->ep) return;
+	opt.len = 22; opt.level = m->level; opt.name = OPT_ADDMCAST; opt.status = 0;
+	for (i = 0; i < 6; i++) opt.addr[i] = m->addr[i];
+	opt.pad[0] = opt.pad[1] = 0;
+	req.opt.buf = (UInt8 *) &opt; req.opt.len = 22; req.flags = T_NEGOTIATE;
+	ret.opt.buf = (UInt8 *) &opt; ret.opt.maxlen = sizeof(opt);
+	OTSetBlocking(e->ep);								/* as in run 1, where the LNK_ENET options came back */
+	Crumb("addmcast", m->label, NOVAL);
+	m->err = OTOptionManagement(e->ep, &req, &ret);
+	Crumb("  addmcast", m->label, m->err);
+	m->status = opt.status;
+	Crumb("  status", m->label, (long) opt.status);
+	OTSetNonBlocking(e->ep);
+}
+
 /* ------------------------------------------------------------------ decoding */
 
 static const char *UdpName(UInt16 port)
@@ -231,6 +280,7 @@ static char KindOfIP(const UInt8 *d)
 static void DecodeL3(const Ep *e, UInt16 type, const UInt8 *p, long n, const UInt8 *srcMAC, char kind)
 {
 	char s[LINELEN + 40];
+	short i;
 	s[0] = 0; Cat(s, e->label); Cat(s, "   "); s[7] = 0;
 	if (type == 0x0806 && n >= 28) {
 		gArp++;
@@ -257,6 +307,26 @@ static void DecodeL3(const Ep *e, UInt16 type, const UInt8 *p, long n, const UIn
 		if (kind == 'U') { s[5] = kind; return; }		/* the bridge's own traffic: counted, not listed */
 	} else if (type == 0x86DD) {
 		gIPv6++; Cat(s, "IPv6");
+		if (n >= 40) {										/* next header 6, destination 24..39 */
+			if (!kind) { kind = p[24] == 0xFF ? 'M' : 'U'; if (kind == 'M') gMulti++; else gUni++; }
+			Cat(s, p[6] == 58 ? " ICMPv6" : p[6] == 17 ? " UDP" : p[6] == 6 ? " TCP" : " next ");
+			if (p[6] != 58 && p[6] != 17 && p[6] != 6) CatNum(s, p[6]);
+			Cat(s, " > "); for (i = 24; i < 40; i += 2) { if (i > 24) Cat(s, ":"); CatHex(s, (UInt16) ((p[i] << 8) | p[i + 1]), 4); }
+		}
+	} else if (type == 0x88CC) {
+		long o = 0;
+		gLldp++; Cat(s, "LLDP");
+		if (!kind) { kind = 'M'; gMulti++; }
+		while (o + 2 <= n) {								/* TLVs: 7-bit type, 9-bit length */
+			short t = (short) (p[o] >> 1), len = (short) (((p[o] & 1) << 8) | p[o + 1]), j;
+			o += 2;
+			if (t == 0 || o + len > n) break;
+			if (t == 5 || t == 4) {
+				Cat(s, t == 5 ? " name " : " port ");
+				for (j = 0; j < len && j < 24; j++) { char c[2]; c[0] = (char) (p[o + j] >= ' ' ? p[o + j] : '.'); c[1] = 0; Cat(s, c); }
+			}
+			o += len;
+		}
 	} else if (type == 1) {
 		gAT++; Cat(s, "DDP");
 		if (n >= 13) { Cat(s, " type "); CatNum(s, p[12]); Cat(s, " net "); CatNum(s, (p[6] << 8) | p[7]); Cat(s, "."); CatNum(s, p[11]); }
@@ -334,7 +404,18 @@ static void Totals(char *s)
 	s[0] = 0; Cat(s, "to me "); CatNum(s, gUni); Cat(s, "  FOREIGN unicast "); CatNum(s, gForeign);
 	Cat(s, "  multicast "); CatNum(s, gMulti); Cat(s, "  broadcast "); CatNum(s, gBroad);
 	Cat(s, "  |  ARP "); CatNum(s, gArp); Cat(s, " IPv4 "); CatNum(s, gIPv4); Cat(s, " IPv6 "); CatNum(s, gIPv6);
-	Cat(s, " DDP "); CatNum(s, gAT); Cat(s, " AARP "); CatNum(s, gAarp); Cat(s, " other "); CatNum(s, gOther);
+	Cat(s, " DDP "); CatNum(s, gAT); Cat(s, " AARP "); CatNum(s, gAarp); Cat(s, " LLDP "); CatNum(s, gLldp);
+	Cat(s, " other "); CatNum(s, gOther);
+}
+
+static void McStatus(char *s)
+{
+	short i;
+	s[0] = 0; Cat(s, "OPT_ADDMCAST:");
+	for (i = 0; i < NMC; i++) {
+		Cat(s, "  "); Cat(s, gMc[i].label); Cat(s, gMc[i].level == LNK_TPI ? "@TPI " : "@ENET ");
+		if (gMc[i].err == 1) Cat(s, "-"); else { CatNum(s, gMc[i].err); Cat(s, "/"); CatHex(s, gMc[i].status, 4); }
+	}
 }
 
 static void Show(short y, const char *c)
@@ -363,7 +444,8 @@ static void Draw(void)
 	Show(12, s);
 	for (i = 0; i < NEP; i++) { EpStatus(&gEp[i], s); Show((short) (26 + 11 * i), s); }
 	Totals(s); Show((short) (30 + 11 * NEP), s);
-	y = (short) (48 + 11 * NEP);
+	McStatus(s); Show((short) (41 + 11 * NEP), s);
+	y = (short) (59 + 11 * NEP);
 	first = gNLine > 26 ? gNLine - 26 : 0;
 	for (k = first; k < gNLine; k++, y += 11) Show(y, gLines[k % NLINES]);
 }
@@ -382,6 +464,7 @@ static void WriteLog(void)
 	CatNum(s, (TickCount() - gStart) / 60L); PUT(s);
 	for (i = 0; i < NEP; i++) { EpStatus(&gEp[i], s); PUT(s); }
 	Totals(s); PUT(s);
+	McStatus(s); PUT(s);
 	first = gNLine > NLINES ? gNLine - NLINES : 0;
 	for (k = first; k < gNLine; k++) { s[0] = 0; Cat(s, gLines[k % NLINES]); PUT(s); }
 	FSClose(ref);
@@ -410,7 +493,9 @@ void main(void)
 	{ InetInterfaceInfo info; if (OTInetGetInterfaceInfo(&info, 0) == noErr) gMyIP = info.fAddress; }
 	Crumb("  done", NULL, NOVAL);
 	Draw();
+	for (i = 0; i < NMC; i++) gMc[i].err = 1;
 	for (i = 0; i < NEP; i++) { OpenEp(&gEp[i]); Draw(); }
+	for (i = 0; i < NMC; i++) { AddMcast(&gMc[i]); Draw(); }
 	Crumb("event loop", NULL, NOVAL);
 	gStart = TickCount();
 	for (;;) {
