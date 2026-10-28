@@ -977,6 +977,7 @@ static void ToolBegin(short tool, const char *host)
 	StrCopy(gToolHost, host, sizeof(gToolHost));
 	gToolMsg[0] = 0;
 	gNLines = 0; gToolSeq = 0; gStep = 0; gToolStop = false;
+	gToolIP = 0;										/* not the last target's: the status line shows it */
 	if (ParseDotted(host, &gToolIP)) { gToolState = (tool == TOOL_DNS) ? NC_TOOL_RESOLVING : NC_TOOL_RUNNING; }
 	else gToolState = NC_TOOL_RESOLVING;
 	if (gToolState == NC_TOOL_RESOLVING) {
