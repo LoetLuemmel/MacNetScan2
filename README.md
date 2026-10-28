@@ -11,8 +11,8 @@ System 7.6.1 guest in Basilisk II through [AppleBridge](https://github.com/LoetL
 | View | What it does |
 |---|---|
 | **IP Network** | Asynchronous TCP-connect sweep of the own /24 against ten well-known ports (AppleBridge, HTTP, HTTPS, SMB, NetBIOS, AFP, SSH, IPP, FTP, Telnet). Names from NetBIOS, multicast DNS or reverse DNS. Round-trip times stamped in the Open Transport notifier, to 0.1 ms. One LED per service, a detail panel per host. |
-| **AppleTalk** | This Mac's node and zone; every NBP entity in every zone with a type LED and its AEP echo time; a click opens a box with what is known (an AFP server's GetStatus: machine, AFP versions, login methods, flags; the other services on that node; the volumes mounted from it). The AppleTalk traffic Listen hears, per protocol (RTMP, NBP, ATP, AEP, ZIP, ADSP, AARP: packets, bytes, sizes, share) and per sending node, a packet-size histogram. The mounted volumes with their server, size and use (AFP 2.x reports at most 2 GB). Scrolled. |
-| **Listen** | Passive - sends nothing but four multicast joins. ARP, IP broadcasts/multicasts (mDNS), DHCP, NetBIOS, IPv6, LLDP, AppleTalk and AARP that reach this Mac: protocol meters, a station table (MAC, IP, AppleTalk address or LLDP system name), an event log (new stations, gratuitous ARP, DHCP, IP conflicts, LLDP neighbours). |
+| **AppleTalk** | This Mac's node and zone; every NBP entity in every zone with a type LED and its AEP echo time; a click opens a box with what is known (an AFP server's GetStatus: machine, AFP versions, login methods, flags; the other services on that node; the volumes mounted from it). The AppleTalk traffic Listen hears, per protocol (RTMP, NBP, ATP, AEP, ZIP, ADSP, AARP: packets, bytes, sizes, share) and per sending node, a packet-size histogram. The routers on the cable from their RTMP broadcasts and the zones from ZIP: each network or range with its hops, router and zone, and the cable range Open Transport uses. The mounted volumes with their server, size and use (AFP 2.x reports at most 2 GB). Scrolled. |
+| **Listen** | Passive - sends nothing but six multicast joins. ARP, IP broadcasts/multicasts (mDNS), DHCP, NetBIOS, IPv6, LLDP, AppleTalk and AARP that reach this Mac: protocol meters, a station table (MAC, IP, AppleTalk address or LLDP system name), an event log (new stations, gratuitous ARP, DHCP, IP conflicts, LLDP neighbours). |
 | **Tools** | Ping (TCP connect), DNS lookup (both directions), traceroute (ICMP). |
 | **Map** | Who sends to whom, from what Listen hears: the 20 busiest stations around an oval in address order, the groups they send to (broadcast, mDNS, IPv6 multicast, LLDP, AppleTalk) on an inner ring, unicast as chords; destinations never heard sending are hollow. Colour by target, width by packets (1/10/100/1000); redrawn every 2 s through a GWorld, so it does not flicker. |
 | **Frames** | The capture behind Listen as a packet list - number, time, source, destination, protocol (coloured), length, a one-line summary - and below it the selected frame's protocol tree (link, ARP/AARP, IPv4/IPv6, TCP/UDP/ICMP/ICMPv6, DNS/mDNS/LLMNR, DHCP, LLDP, DDP/NBP; NetBIOS and ATP in the summary line) and its bytes in hex. The last 400 frames, 384 bytes of each. The list follows the newest frame; a click on a frame holds it still, a second click lets it follow again. Open Transport hands frames over without their MAC header, so the link layer shows the sender and the type only. **Export** writes the frames kept as a pcap file for Wireshark, link type 113 (Linux cooked capture), which needs no MAC header - just the sender and EtherType Open Transport hands on; timestamps in UTC (set the guest's Map control panel, or they are off by its time zone). |
@@ -73,7 +73,15 @@ The Listen view binds, joins four multicast groups and receives - and that is al
 **Multicast is the exception:** Open Transport drops every group nobody joined - the multicast meter stayed at 0 with
 mDNS on the wire, while AppleTalk's own group arrived. `OPT_ADDMCAST` at `LNK_ENET` answers `TBADOPT`; at `LNK_TPI` it
 returns `T_SUCCESS` without a hang. Listen joins mDNS (`01:00:5e:00:00:fb`), IPv6 all-nodes and mDNS
-(`33:33:00:00:00:01`, `33:33:00:00:00:fb`) and LLDP (`01:80:c2:00:00:0e`) that way; the switch then shows up by name.
+(`33:33:00:00:00:01`, `33:33:00:00:00:fb`) and LLDP (`01:80:c2:00:00:0e`) that way; the switch then shows up by name. The AppleTalk broadcast
+(`09:00:07:ff:ff:ff`) is joined for DDP and AARP too - without it RTMP, NBP lookups and AARP probes of other nodes
+never arrived.
+
+**No RTMP from a lone atalkd:** netatalk's atalkd (2.2 up to today's `main`) sends RTMP data only when it has a route
+from *another* interface to announce (`if (n)` after split horizon in `as_timer`). Seeded with `-router` on a single
+interface it answers ZIP GetNetInfo but never announces itself, so the Macs see no router and the zone stays `*`. One
+hand-made RTMP packet from the server's address makes Open Transport report "Your AppleTalk network is now available"
+and the zone appear; the AppleTalk view then lists the network, its hops, router and zone.
 
 The freeze is not in Basilisk: its `.ENET` driver answers every unknown control call with `controlErr` and completes
 it (`BasiliskII/src/ether.cpp`). It is inside Open Transport's layer above that driver.

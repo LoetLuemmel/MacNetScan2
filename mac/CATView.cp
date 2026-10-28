@@ -233,8 +233,12 @@ void CATPane::Draw(Rect *area)
 		else if (NC_ATInfo(&ai) == 0) {
 			CCat(info, "This Mac  "); CCat(info, ai.address);
 			CCat(info, "   zone "); CCat(info, ai.zone[0] ? ai.zone : "*");
-			if (ai.router[0]) { CCat(info, "   router "); CCat(info, ai.router); }
-			CCat(info, ai.isExtended ? "   extended network" : "   LocalTalk-style network");
+			CCat(info, ai.isExtended ? "   extended network " : "   LocalTalk-style network ");
+			CCatNum(info, ai.cableLow);
+			if (ai.cableHigh != ai.cableLow) { CCat(info, "-"); CCatNum(info, ai.cableHigh); }
+			if (ai.cableLow == 0 && ai.cableHigh >= 0xFFFE) CCat(info, " (whole range: no router heard)");
+			else CCat(info, ai.router[0] ? "   router " : "   no router known to Open Transport");
+			if (ai.router[0]) CCat(info, ai.router);
 		}
 	}
 	TextFont(kChicago); TextSize(12);
@@ -305,6 +309,65 @@ void CATPane::Draw(Rect *area)
 		MoveTo((short) (r.left + 30), (short) (y - 2));
 		DrawC("Click a device for what is known about it.");
 		y += 14;
+	}
+
+	{															/* routers and zones, from RTMP and ZIP */
+		short k, nr = NC_ATRouterCount(), nt = NC_ATRouteCount();
+		char s[96];
+		y += 16;
+		SectionTitle((short) (r.left + 30), y, "Network & routers");
+		SectionTitle((short) (r.left + 260), y, "Network");
+		SectionTitle((short) (r.left + 340), y, "Hops");
+		SectionTitle((short) (r.left + 420), y, "Via router");
+		SectionTitle((short) (r.left + 560), y, "Zone");
+		RGBForeColor(&kStatusLn);
+		MoveTo((short) (r.left + 8), (short) (y + 5)); LineTo((short) (r.right - 8), (short) (y + 5));
+		y += 22;
+		if (nr == 0 && nt == 0) {
+			RGBForeColor(&kInkSoft);
+			MoveTo((short) (r.left + 30), y);
+			DrawC(NC_Listening() ? "No router heard yet - a router announces its routes (RTMP) every 10 s."
+								 : "No router heard - Scan in Listen, Map or Frames listens for RTMP and ZIP.");
+			y += 18;
+		}
+		for (k = 0; k < nt; k++) {								/* every network a router named */
+			const NCATRoute *rt = NC_ATRoute(k);
+			const NCATRouter *ro = rt ? NC_ATRouter(rt->router) : NULL;
+			if (rt == NULL) break;
+			if (y - 13 <= vis.bottom && y + 5 >= vis.top) {
+				RGBForeColor(&kInk);
+				MoveTo((short) (r.left + 30), y); DrawC(rt->distance == 0 ? "this cable" : "remote network");
+				s[0] = '\0'; CCatNum(s, rt->rangeLo);
+				if (rt->rangeHi != rt->rangeLo) { CCat(s, "-"); CCatNum(s, rt->rangeHi); }
+				MoveTo((short) (r.left + 260), y); DrawC(s);
+				s[0] = '\0'; CCatNum(s, rt->distance); MoveTo((short) (r.left + 340), y); DrawC(s);
+				RGBForeColor(&kInkSoft);
+				s[0] = '\0';
+				if (ro) {
+					short j;
+					CCatNum(s, ro->net); CCat(s, "."); CCatNum(s, ro->node);
+					for (j = 0; j < NC_EntityCount(); j++) {
+						const NCEntity *e = NC_Entity(j);
+						if (e && e->net == ro->net && e->node == ro->node) { CCat(s, "  "); CCat(s, e->object); break; }
+					}
+				} else CCat(s, "(from ZIP)");
+				MoveTo((short) (r.left + 420), y); DrawTrunc(s, 134);
+				MoveTo((short) (r.left + 560), y); DrawTrunc(rt->zone[0] ? rt->zone : "-", 140);
+			}
+			y += 16;
+		}
+		for (k = 0; k < nr; k++) {								/* when each router last spoke */
+			const NCATRouter *ro = NC_ATRouter(k);
+			if (ro == NULL) break;
+			if (y - 13 <= vis.bottom && y + 5 >= vis.top) {
+				s[0] = '\0'; CCat(s, "Router "); CCatNum(s, ro->net); CCat(s, "."); CCatNum(s, ro->node);
+				CCat(s, " announces "); CCatNum(s, ro->routes); CCat(s, ro->routes == 1 ? " route" : " routes");
+				CCat(s, ", last "); CCatNum(s, (long) ((TickCount() - ro->lastTick) / 60)); CCat(s, " s ago");
+				RGBForeColor(&kInkSoft);
+				MoveTo((short) (r.left + 30), y); DrawC(s);
+			}
+			y += 14;
+		}
 	}
 
 	{															/* the AppleTalk traffic Listen has heard */

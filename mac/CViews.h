@@ -30,7 +30,7 @@ protected:
 	void			DrawBox(Rect *vis);
 	void			SetContentHeight(short h);
 
-	char			info[96];				// "Node 65280.117 ..." - read once, NC_ATInfo opens AppleTalk
+	char			info[160];				// "This Mac 65280.117 ..." - every 30 s, NC_ATInfo opens AppleTalk
 	unsigned long	infoTick;
 	short			sel;					// the selected entity, -1 none
 	short			listTop;				// content y of the first entity row's baseline

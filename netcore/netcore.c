@@ -1552,7 +1552,9 @@ static const struct { short ep; UInt8 group[6]; } kLsJoin[] = {
 	{ LS_IP,   { 0x01, 0x00, 0x5E, 0x00, 0x00, 0xFB } },		/* mDNS 224.0.0.251 */
 	{ LS_IP6,  { 0x33, 0x33, 0x00, 0x00, 0x00, 0x01 } },		/* IPv6 all nodes */
 	{ LS_IP6,  { 0x33, 0x33, 0x00, 0x00, 0x00, 0xFB } },		/* mDNS ff02::fb */
-	{ LS_LLDP, { 0x01, 0x80, 0xC2, 0x00, 0x00, 0x0E } }		/* LLDP nearest bridge */
+	{ LS_LLDP, { 0x01, 0x80, 0xC2, 0x00, 0x00, 0x0E } },		/* LLDP nearest bridge */
+	{ LS_DDP,  { 0x09, 0x00, 0x07, 0xFF, 0xFF, 0xFF } },		/* AppleTalk broadcast: RTMP, NBP, ZIP */
+	{ LS_AARP, { 0x09, 0x00, 0x07, 0xFF, 0xFF, 0xFF } }		/* AARP probes and requests */
 };
 
 static EndpointRef		gLsEp[LS_COUNT];
@@ -1757,6 +1759,99 @@ static void ATTraffic(UInt16 net, UInt8 node, short type, short len)
 }
 
 void NC_ATTraffic(NCATTraffic *t) { *t = gATT; }
+
+	/* RTMP data (DDP type 1): the router's network, an ID, then tuples - extended ones carry a range end and $82 */
+#define AT_ROUTERS	8
+#define AT_ROUTES	32
+static NCATRouter	gATR[AT_ROUTERS];
+static short		gNATR = 0;
+static NCATRoute	gATRt[AT_ROUTES];
+static short		gNATRt = 0;
+
+static void ATRoute(short router, UInt16 lo, UInt16 hi, UInt8 dist)
+{
+	short i;
+	for (i = 0; i < gNATRt; i++) if (gATRt[i].rangeLo == lo && gATRt[i].rangeHi == hi) break;
+	if (i == gNATRt) {												/* a network not seen before */
+		if (gNATRt >= AT_ROUTES) return;
+		OTMemzero(&gATRt[i], sizeof(NCATRoute));
+		gNATRt++;
+	} else if (gATRt[i].distance < dist || router < 0) return;		/* a shorter way is known; ZIP names no router */
+	gATRt[i].rangeLo = lo; gATRt[i].rangeHi = hi; gATRt[i].distance = dist; gATRt[i].router = router;
+}
+
+static void LsRtmp(const UInt8 *d, long n)						/* d: the DDP data, after the 13-byte header */
+{
+	UInt16 net;
+	UInt8 node, idLen;
+	short r, tuples = 0;
+	long o;
+	if (n < 4) return;
+	net = (UInt16) ((d[0] << 8) | d[1]); idLen = d[2]; node = d[3];
+	if (idLen != 8) return;
+	for (r = 0; r < gNATR; r++) if (gATR[r].net == net && gATR[r].node == node) break;
+	if (r == gNATR) {
+		if (gNATR >= AT_ROUTERS) return;
+		OTMemzero(&gATR[r], sizeof(NCATRouter));
+		gATR[r].net = net; gATR[r].node = node;
+		gNATR++;
+		{ char s[NC_EVENTLEN], nb[8]; s[0] = 0; StrCat(s, "AppleTalk router ");
+		  UToStr(net, nb); StrCat(s, nb); StrCat(s, "."); UToStr(node, nb); StrCat(s, nb); StrCat(s, " announces routes"); LsEvent(s); }
+	}
+	gATR[r].lastTick = TickCount();
+	for (o = 4; o + 3 <= n; ) {
+		UInt16 lo = (UInt16) ((d[o] << 8) | d[o + 1]), hi = lo;
+		UInt8 dist = d[o + 2];
+		if (dist & 0x80) {											/* extended: range end, then $82 */
+			if (o + 6 > n) break;
+			hi = (UInt16) ((d[o + 3] << 8) | d[o + 4]);
+			o += 6;
+		} else o += 3;
+		dist &= 0x1F;
+		if (lo == 0) continue;										/* a non-extended network's version tuple */
+		if (dist == 0) { gATR[r].rangeLo = lo; gATR[r].rangeHi = hi; }
+		ATRoute(r, lo, hi, dist);
+		tuples++;
+	}
+	gATR[r].routes = tuples;
+	gChange++;
+}
+
+	/* ZIP (DDP type 6): replies name the zones of networks - Reply/Extended Reply list net + zone, GetNetInfo Reply
+	   gives the range and the zone of this cable */
+static void ATZone(UInt16 net, const UInt8 *z, short len)
+{
+	short i, k;
+	for (i = 0; i < gNATRt; i++)
+		if (net >= gATRt[i].rangeLo && net <= gATRt[i].rangeHi && gATRt[i].zone[0] == 0) {
+			for (k = 0; k < len && k < 33; k++) gATRt[i].zone[k] = (char) z[k];
+			gATRt[i].zone[k] = 0;
+		}
+}
+
+static void LsZip(const UInt8 *d, long n)
+{
+	long o;
+	short count, i;
+	if (n < 2) return;
+	if (d[0] == 2 || d[0] == 8) {								/* Reply, Extended Reply: count, (net, zone)... */
+		count = d[1];
+		for (o = 2, i = 0; i < count && o + 3 <= n && o + 3 + d[o + 2] <= n; i++) {
+			ATZone((UInt16) ((d[o] << 8) | d[o + 1]), d + o + 3, d[o + 2]);
+			o += 3 + d[o + 2];
+		}
+	} else if (d[0] == 6 && n >= 7 && 7 + d[6] <= n) {			/* GetNetInfo Reply: flags, lo, hi, zone */
+		UInt16 lo = (UInt16) ((d[2] << 8) | d[3]), hi = (UInt16) ((d[4] << 8) | d[5]);
+		ATRoute(-1, lo, hi, 0);
+		ATZone(lo, d + 7, d[6]);
+	}
+	gChange++;
+}
+
+short NC_ATRouterCount(void) { return gNATR; }
+const NCATRouter *NC_ATRouter(short i) { return (i >= 0 && i < gNATR) ? &gATR[i] : NULL; }
+short NC_ATRouteCount(void) { return gNATRt; }
+const NCATRoute *NC_ATRoute(short i) { return (i >= 0 && i < gNATRt) ? &gATRt[i] : NULL; }
 short NC_ATNodeCount(void) { return gNATN; }
 const NCATNode *NC_ATNode(short i) { return (i >= 0 && i < gNATN) ? &gATN[i] : NULL; }
 const char *NC_ATTypeName(short type)
@@ -1782,6 +1877,8 @@ static void LsDdp(const UInt8 *mac, const UInt8 *p, long n)
 			default:		t = NC_ATT_OTHER; break;
 		}
 		ATTraffic((UInt16) ((p[6] << 8) | p[7]), p[9], t, len);
+		if (p[12] == 1) LsRtmp(p + 13, len - 13);				/* RTMP data: a router speaks */
+		else if (p[12] == 6) LsZip(p + 13, len - 13);
 	}
 	st = LsStation(mac);
 	LsTouch(st, NC_SEEN_AT);
@@ -2073,6 +2170,19 @@ long NC_BuildATReport(char *buf, long max)
 		App(buf, &o, max, gEnt[i].zone); App(buf, &o, max, "\t"); App(buf, &o, max, gEnt[i].address); App(buf, &o, max, "\t");
 		if (gEnt[i].rttUs != -2) { NC_RttToStr(gEnt[i].rttUs, nb); App(buf, &o, max, nb); }
 		App(buf, &o, max, "\t"); App(buf, &o, max, gEnt[i].info); App(buf, &o, max, CR);
+	}
+	if (gNATRt > 0) {
+		App(buf, &o, max, CR "Network\tHops\tVia router\tZone" CR);
+		for (i = 0; i < gNATRt; i++) {
+			UToStr(gATRt[i].rangeLo, nb); App(buf, &o, max, nb);
+			if (gATRt[i].rangeHi != gATRt[i].rangeLo) { App(buf, &o, max, "-"); UToStr(gATRt[i].rangeHi, nb); App(buf, &o, max, nb); }
+			App(buf, &o, max, "\t"); UToStr(gATRt[i].distance, nb); App(buf, &o, max, nb); App(buf, &o, max, "\t");
+			if (gATRt[i].router >= 0 && gATRt[i].router < gNATR) {
+				UToStr(gATR[gATRt[i].router].net, nb); App(buf, &o, max, nb); App(buf, &o, max, ".");
+				UToStr(gATR[gATRt[i].router].node, nb); App(buf, &o, max, nb);
+			}
+			App(buf, &o, max, "\t"); App(buf, &o, max, gATRt[i].zone); App(buf, &o, max, CR);
+		}
 	}
 	if (gATT.firstTick) {
 		short k;

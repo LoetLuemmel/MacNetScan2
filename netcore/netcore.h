@@ -72,7 +72,7 @@ typedef struct {
 	char		address[24];				/* "65280.117:4" */
 	char		router[24];					/* "" if none */
 	char		zone[34];
-	short		cableLow, cableHigh;
+	unsigned short	cableLow, cableHigh;	/* 0-65534 = no router heard (RTMP) */
 	Boolean		isExtended;					/* "extended" is SANE's floating type in C++ */
 } NCATInfo;
 
@@ -128,6 +128,24 @@ typedef struct {
 	unsigned long	firstTick, lastTick;
 } NCATTraffic;
 void		NC_ATTraffic(NCATTraffic *t);
+	/* Routers, from RTMP data Listen hears (every 10 s from each router), and zones from ZIP replies */
+typedef struct {
+	unsigned short	net;					/* the router's address */
+	unsigned char	node;
+	unsigned short	rangeLo, rangeHi;		/* the network it announces as its own (distance 0) */
+	short			routes;					/* tuples in its last RTMP data */
+	unsigned long	lastTick;
+} NCATRouter;
+typedef struct {
+	unsigned short	rangeLo, rangeHi;
+	unsigned char	distance;				/* hops */
+	short			router;					/* index into NC_ATRouter */
+	char			zone[34];				/* from a ZIP reply; "" not heard */
+} NCATRoute;
+short		NC_ATRouterCount(void);
+const NCATRouter *NC_ATRouter(short i);
+short		NC_ATRouteCount(void);
+const NCATRoute *NC_ATRoute(short i);
 const char *NC_ATTypeName(short type);			/* "RTMP", "NBP", ... */
 short		NC_ATNodeCount(void);
 const NCATNode *NC_ATNode(short i);
