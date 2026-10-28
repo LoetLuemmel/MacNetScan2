@@ -81,17 +81,30 @@ typedef struct {
 	char		type[34];
 	char		zone[34];
 	char		address[24];
+	unsigned short	net;						/* the address as numbers, for AEP and ASP */
+	unsigned char	node, socket;
+	long		rttUs;						/* AEP echo round trip; -1 no answer, -2 not asked (yet) */
+	char		info[200];					/* an AFP server's GetStatus: machine, AFP versions, UAMs; "" none */
 } NCEntity;
+typedef struct {
+	char			name[32];
+	unsigned long	serverAdr;				/* AppleTalk net << 16 | node << 8 | socket of its server; 0 local */
+	long			totalK, freeK;
+} NCVolume;
 
 Boolean		NC_ATAvailable(void);
 long    	NC_ATInfo(NCATInfo *info);
 short		NC_ZoneCount(void);						/* fetches the zone list on first use */
 const char *NC_Zone(short i);
 void		NC_NbpStart(void);						/* all zones ("*" on a flat network) */
-Boolean		NC_NbpIdle(void);						/* one zone per call; false when finished */
+Boolean		NC_NbpIdle(void);						/* one zone per call, then an AEP echo per node and an ASP
+													   GetStatus per AFP server; false when finished */
 void		NC_NbpProgress(short *done, short *total);
 short		NC_EntityCount(void);
 const NCEntity *NC_Entity(short i);
+void		NC_VolumeRead(void);					/* the mounted volumes: asks the File Manager (and AFP servers) */
+short		NC_VolumeCount(void);					/* as last read */
+const NCVolume *NC_Volume(short i);
 
 /* ---- tools: ping (TCP), DNS, traceroute (ICMP) ---- */
 enum { NC_TOOL_IDLE = 0, NC_TOOL_RESOLVING, NC_TOOL_RUNNING, NC_TOOL_DONE, NC_TOOL_FAILED };

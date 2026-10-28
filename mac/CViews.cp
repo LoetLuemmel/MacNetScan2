@@ -44,6 +44,13 @@ static Boolean HasText(const char *s, const char *p)
 	return FALSE;
 }
 
+static void CatSize(char *s, long k)							/* "512 MB", "1.9 GB" from kilobytes */
+{
+	if (k >= 1024L * 1024L) { CCatNum(s, k / (1024L * 1024L)); CCat(s, "."); CCatNum(s, (k % (1024L * 1024L)) * 10 / (1024L * 1024L)); CCat(s, " GB"); }
+	else if (k >= 1024L) { CCatNum(s, k / 1024L); CCat(s, " MB"); }
+	else { CCatNum(s, k); CCat(s, " KB"); }
+}
+
 static void SectionTitle(short x, short y, const char *t)
 {
 	TextFont(kGeneva); TextSize(9); TextFace(bold);
@@ -81,6 +88,7 @@ void CATPane::Draw(Rect *area)
 		NCATInfo ai;
 		infoTick = TickCount();
 		info[0] = '\0';
+		NC_VolumeRead();										/* the mounted volumes, as seldom */
 		if (!NC_ATAvailable()) CCat(info, "AppleTalk is not active on this Mac.");
 		else if (NC_ATInfo(&ai) == 0) {
 			CCat(info, "This Mac  "); CCat(info, ai.address);
@@ -103,6 +111,7 @@ void CATPane::Draw(Rect *area)
 	SectionTitle((short) (r.left + 260), y, "Type");
 	SectionTitle((short) (r.left + 420), y, "Zone");
 	SectionTitle((short) (r.left + 560), y, "Address");
+	SectionTitle((short) (r.left + 632), y, "Echo");
 	RGBForeColor(&kStatusLn);
 	MoveTo((short) (r.left + 8), (short) (y + 5)); LineTo((short) (r.right - 8), (short) (y + 5));
 
@@ -130,11 +139,80 @@ void CATPane::Draw(Rect *area)
 		TextFont(kMonaco);
 		MoveTo((short) (r.left + 560), y); DrawC(e->address);
 		TextFont(kGeneva);
+		if (e->rttUs != -2) {									/* AEP echo: the IP view's meter */
+			char ms[16];
+			DrawRtt((short) (r.left + 632), (short) (y + 1), e->rttUs);
+			NC_RttToStr(e->rttUs, ms);
+			RGBForeColor(&kInkSoft);
+			MoveTo((short) (r.left + 656), y); DrawC(ms); if (e->rttUs >= 0) DrawC(" ms");
+		}
+		if (e->info[0]) {										/* an AFP server: what GetStatus told */
+			y += 13;
+			RGBForeColor(&kInkSoft);
+			MoveTo((short) (r.left + 42), y); DrawTrunc(e->info, (short) (r.right - r.left - 60));
+		}
 	}
 	if (n == 0) {
 		RGBForeColor(&kInkSoft);
 		MoveTo((short) (r.left + 30), y);
 		DrawC("No devices yet - press Scan to look them up with NBP, zone by zone.");
+		y += 18;
+	}
+
+	n = NC_VolumeCount();										/* the mounted volumes, AppleShare first */
+	y += 16;
+	if (y + 40 < r.bottom) {
+		short pass;
+		SectionTitle((short) (r.left + 30), y, "Volume");
+		SectionTitle((short) (r.left + 260), y, "Server");
+		SectionTitle((short) (r.left + 420), y, "Size");
+		SectionTitle((short) (r.left + 500), y, "Used");
+		RGBForeColor(&kStatusLn);
+		MoveTo((short) (r.left + 8), (short) (y + 5)); LineTo((short) (r.right - 8), (short) (y + 5));
+		y += 22;
+		for (pass = 0; pass < 2; pass++)
+			for (i = 0; i < n && y < r.bottom - 6; i++) {
+				const NCVolume *v = NC_Volume(i);
+				char s[48];
+				short j, used;
+				Rect bar;
+				if (v == NULL || (pass == 0) != (v->serverAdr != 0)) continue;
+				RGBForeColor(&kInk);
+				MoveTo((short) (r.left + 30), y); DrawTrunc(v->name, 220);
+				s[0] = '\0';
+				if (v->serverAdr) {									/* net.node:socket, and the server's NBP name */
+					CCatNum(s, (long) (v->serverAdr >> 16)); CCat(s, "."); CCatNum(s, (long) ((v->serverAdr >> 8) & 0xFF));
+					CCat(s, ":"); CCatNum(s, (long) (v->serverAdr & 0xFF));
+					for (j = 0; j < NC_EntityCount(); j++) {
+						const NCEntity *e = NC_Entity(j);
+						if (e && e->net == (v->serverAdr >> 16) && e->node == ((v->serverAdr >> 8) & 0xFF) && HasText(e->type, "AFP")) {
+							CCat(s, "  "); CCat(s, e->object); break;
+						}
+					}
+				} else CCat(s, "this Mac");
+				RGBForeColor(&kInkSoft);
+				MoveTo((short) (r.left + 260), y); DrawTrunc(s, 155);
+				if (v->serverAdr && v->totalK >= 2096000L) {			/* AFP 2.x hands on at most 2 GB: true size unknown */
+					RGBForeColor(&kInk);
+					MoveTo((short) (r.left + 420), y); DrawC("> 2 GB");
+					RGBForeColor(&kInkSoft);
+					MoveTo((short) (r.left + 500), y); DrawC("not reported (AFP 2.x caps sizes at 2 GB)");
+					y += 16;
+					continue;
+				}
+				s[0] = '\0'; CatSize(s, v->totalK);
+				RGBForeColor(&kInk);
+				MoveTo((short) (r.left + 420), y); DrawC(s);
+				used = (short) (v->totalK > 0 ? (v->totalK - v->freeK) * 100 / v->totalK : 0);
+				SetRect(&bar, (short) (r.left + 500), (short) (y - 8), (short) (r.left + 600), (short) (y - 1));
+				RGBForeColor(&kBarTrack); PaintRect(&bar);
+				bar.right = (short) (bar.left + used);
+				RGBForeColor(used > 90 ? &kRttSlow : &kBarFill); PaintRect(&bar);
+				s[0] = '\0'; CCatNum(s, used); CCat(s, " %   "); CatSize(s, v->freeK); CCat(s, " free");
+				RGBForeColor(&kInkSoft);
+				MoveTo((short) (r.left + 608), y); DrawTrunc(s, (short) (r.right - r.left - 616));
+				y += 16;
+			}
 	}
 	RGBForeColor(&kBlackC);
 }

@@ -9,6 +9,7 @@
 #include <Memory.h>						/* NewPtr, NewPtrClear, DisposePtr, BlockMove */
 #include <Errors.h>						/* memFullErr */
 #include <OSUtils.h>						/* GetDateTime, ReadLocation: the capture's start for pcap */
+#include <Files.h>						/* PBHGetVInfo, PBHGetVolParms: the mounted AppleShare volumes */
 #include <OpenTransport.h>
 #include <OpenTptInternet.h>
 #include <OpenTptAppleTalk.h>
@@ -880,15 +881,215 @@ static void NbpLookupZone(const char *zone)
 			OTExtractNBPZone(&ent, e->zone);
 			if (!e->zone[0]) StrCopy(e->zone, zone, sizeof(e->zone));
 			DDPToStr((DDPAddress *) ab, e->address);
+			e->net = ((DDPAddress *) ab)->fNetwork;
+			e->node = ((DDPAddress *) ab)->fNodeID;
+			e->socket = ((DDPAddress *) ab)->fSocket;
+			e->rttUs = -2;
+			e->info[0] = 0;
 			off += (rec + 3) & ~3L;
 		}
 	}
 	DisposePtr(rbuf);
 }
 
+/* ---- after NBP: an AEP echo to every node (DDP type 4 to socket 4), an ASP GetStatus to every AFP server (ATP to
+   its session listening socket). Both on endpoints of their own, non-blocking, one question at a time. */
+
+enum { PROBE_ECHO, PROBE_ASP, PROBE_DONE };
+static EndpointRef		gDdpEp = NULL, gAtpEp = NULL;
+static short			gProbePass = PROBE_DONE, gProbeIdx = 0;
+static Boolean			gProbeWait = false;
+static unsigned long	gProbeT0 = 0;
+static OTTimeStamp		gProbeStamp;
+static UInt8			gProbeBuf[600];
+static OTSequence		gAspSeq = 0;
+
+static EndpointRef OpenAtEp(const char *config)
+{
+	EndpointRef ep;
+	OSStatus err;
+	TBind req;
+	ep = OTOpenEndpoint(OTCreateConfiguration(config), 0, NULL, &err);
+	if (err != noErr || ep == NULL) return NULL;
+	OTMemzero(&req, sizeof(req));								/* any free socket */
+	if (OTBind(ep, &req, NULL) != noErr) { OTCloseProvider(ep); return NULL; }
+	OTSetNonBlocking(ep);
+	return ep;
+}
+
+static void ProbeEnd(void)
+{
+	if (gDdpEp) { OTCloseProvider(gDdpEp); gDdpEp = NULL; }
+	if (gAtpEp) { OTCloseProvider(gAtpEp); gAtpEp = NULL; }
+	gProbePass = PROBE_DONE;
+	gProbeWait = false;
+}
+
+static void ProbeBegin(void)
+{
+	ProbeEnd();
+	gDdpEp = OpenAtEp(kDDPName);
+	gAtpEp = OpenAtEp(kATPName);
+	gProbePass = (gDdpEp || gAtpEp) ? PROBE_ECHO : PROBE_DONE;
+	gProbeIdx = 0;
+}
+
+static void SetNodeRtt(UInt16 net, UInt8 node, long us)		/* every entity on that node shares the answer */
+{
+	short i;
+	for (i = 0; i < gNEnt; i++) if (gEnt[i].net == net && gEnt[i].node == node && gEnt[i].rttUs < 0) gEnt[i].rttUs = us;
+}
+
+static void CatMax(char *dst, const char *src, short max)		/* StrCat, cut at max - 1 */
+{
+	short i = 0, j = 0;
+	while (dst[i] && i < max - 1) i++;
+	while (src[j] && i < max - 1) dst[i++] = src[j++];
+	dst[i] = 0;
+}
+
+static void CatPStr(char *dst, const UInt8 *p, short max)
+{
+	char t[64];
+	short n = p[0], i;
+	if (n > 63) n = 63;
+	for (i = 0; i < n; i++) t[i] = (char) (p[i + 1] >= ' ' && p[i + 1] < 127 ? p[i + 1] : '?');
+	t[n] = 0;
+	CatMax(dst, t, max);
+}
+
+	/* An AFP status block (FPGetSrvrInfo): offsets of machine type, AFP versions, UAMs, the volume icon, then flags
+	   and the server name. OT may or may not hand the 4 ATP user bytes on in front: take the base that parses. */
+static Boolean AfpInfo(const UInt8 *b, long n, char *out, short max)
+{
+	static const char *kFlag[] = { "CopyFile", "change password", "no saved login", "server messages",
+								   "signature", "TCP/IP", "notifications", "reconnect" };
+	long base, mt, vo, uo, k;
+	unsigned short flags;
+	short i, cnt;
+	for (base = 0; base <= 4; base += 4) {
+		if (n - base < 12) continue;
+		mt = (b[base] << 8) | b[base + 1]; vo = (b[base + 2] << 8) | b[base + 3]; uo = (b[base + 4] << 8) | b[base + 5];
+		if (b[base + 10] == 0 || base + 11 + b[base + 10] > n) continue;
+		if (mt < 11 || vo < 11 || uo < 11 || base + mt >= n || base + vo >= n || base + uo >= n) continue;
+		flags = (unsigned short) ((b[base + 8] << 8) | b[base + 9]);
+		out[0] = 0;
+		if (base + mt + 1 + b[base + mt] <= n) CatPStr(out, b + base + mt, max);
+		CatMax(out, "   ", max);
+		cnt = b[base + vo]; k = base + vo + 1;
+		CatMax(out, "AFP ", max);
+		for (i = 0; i < cnt && k < n && k + 1 + b[k] <= n; i++) {		/* "AFPVersion 2.1", "AFP3.3", "AFPX03": the number */
+			UInt8 v[40];
+			short s = 0, m = b[k];
+			if (m > 39) m = 39;
+			if (m > 11 && b[k + 1] == 'A' && b[k + 4] == 'V') s = 11;		/* "AFPVersion " */
+			else if (m > 3 && b[k + 1] == 'A' && b[k + 2] == 'F' && b[k + 3] == 'P') s = 3;
+			v[0] = (UInt8) (m - s); BlockMove(b + k + 1 + s, v + 1, m - s);
+			if (i) CatMax(out, " ", max);
+			CatPStr(out, v, max);
+			k += 1 + b[k];
+		}
+		CatMax(out, "   UAM ", max);
+		cnt = b[base + uo]; k = base + uo + 1;
+		for (i = 0; i < cnt && k < n && k + 1 + b[k] <= n; i++) { if (i) CatMax(out, ", ", max); CatPStr(out, b + k, max); k += 1 + b[k]; }
+		for (i = 0; i < 8; i++) if (flags & (1 << i)) { CatMax(out, i == 0 ? "   " : ", ", max); CatMax(out, kFlag[i], max); }
+		return true;
+	}
+	return false;
+}
+
+static void ProbeStep(void)
+{
+	NCEntity *e;
+	TUnitData ud;
+	OTFlags flags;
+	OTResult res;
+	if (gProbeWait) {
+		e = &gEnt[gProbeIdx];
+		if (gProbePass == PROBE_ECHO) {
+			DDPAddress from;
+			OTTimeStamp now;
+			for (;;) {												/* the echo replies so far */
+				OTMemzero(&ud, sizeof(ud));
+				ud.addr.buf = (UInt8 *) &from; ud.addr.maxlen = sizeof(from);
+				ud.udata.buf = gProbeBuf; ud.udata.maxlen = sizeof(gProbeBuf);
+				flags = 0;
+				res = OTRcvUData(gDdpEp, &ud, &flags);
+				if (res == kOTLookErr) { if (OTLook(gDdpEp) == T_UDERR) OTRcvUDErr(gDdpEp, NULL); break; }
+				if (res != noErr) break;
+				if (ud.udata.len < 1 || gProbeBuf[0] != 2) continue;	/* AEP reply */
+				OTGetTimeStamp(&now);
+				SetNodeRtt(from.fNetwork, from.fNodeID, StampUs(&gProbeStamp, &now));
+				gChange++;
+			}
+			if (e->rttUs >= 0 || TickCount() - gProbeT0 > 60) {
+				SetNodeRtt(e->net, e->node, -1);					/* no answer within a second */
+				gProbeWait = false; gProbeIdx++; gChange++;
+			}
+		} else {
+			TUnitReply rp;
+			OTMemzero(&rp, sizeof(rp));
+			rp.udata.buf = gProbeBuf; rp.udata.maxlen = sizeof(gProbeBuf);
+			flags = 0;
+			res = OTRcvUReply(gAtpEp, &rp, &flags);
+			if (res == noErr) {
+				if (!AfpInfo(gProbeBuf, (long) rp.udata.len, e->info, sizeof(e->info))) StrCopy(e->info, "(status not readable)", sizeof(e->info));
+			} else if (res == kOTLookErr || TickCount() - gProbeT0 > 240) {
+				if (res == kOTLookErr && OTLook(gAtpEp) == T_UDERR) OTRcvUDErr(gAtpEp, NULL);
+				StrCopy(e->info, "(no answer to ASP GetStatus)", sizeof(e->info));
+				OTCloseProvider(gAtpEp); gAtpEp = OpenAtEp(kATPName);	/* drop what is still outstanding */
+			} else return;
+			gProbeWait = false; gProbeIdx++; gChange++;
+		}
+		return;
+	}
+	while (gProbePass != PROBE_DONE) {
+		if (gProbeIdx >= gNEnt) { gProbePass++; gProbeIdx = 0; continue; }
+		e = &gEnt[gProbeIdx];
+		if (gProbePass == PROBE_ECHO) {
+			DDPAddress to;
+			UInt8 msg[4];
+			if (!gDdpEp || e->rttUs != -2) { gProbeIdx++; continue; }	/* this node has answered already */
+			OTInitDDPAddress(&to, e->net, e->node, 4, 4);			/* the echoer, DDP type 4 */
+			msg[0] = 1; msg[1] = 'M'; msg[2] = 'N'; msg[3] = 'S';	/* 1: echo request */
+			OTMemzero(&ud, sizeof(ud));
+			ud.addr.buf = (UInt8 *) &to; ud.addr.len = sizeof(to);
+			ud.udata.buf = msg; ud.udata.len = sizeof(msg);
+			OTGetTimeStamp(&gProbeStamp);
+			if (OTSndUData(gDdpEp, &ud) != noErr) { SetNodeRtt(e->net, e->node, -1); gProbeIdx++; continue; }
+		} else {
+			DDPAddress to;
+			TUnitRequest rq;
+			UInt8 ub[4];
+			if (!gAtpEp || !StrEq(e->type, "AFPServer")) { gProbeIdx++; continue; }
+			OTInitDDPAddress(&to, e->net, e->node, e->socket, 3);	/* ATP to the session listening socket */
+			ub[0] = 3; ub[1] = ub[2] = ub[3] = 0;					/* the user bytes: SPGetStatus */
+			OTMemzero(&rq, sizeof(rq));
+			rq.addr.buf = (UInt8 *) &to; rq.addr.len = sizeof(to);
+			rq.udata.buf = ub; rq.udata.len = sizeof(ub);
+			rq.sequence = ++gAspSeq;								/* ours to choose; 0 is kOTBadSequenceErr */
+			{
+				OSStatus err = OTSndURequest(gAtpEp, &rq, 0);
+				if (err != noErr) {
+					char nb[12];
+					StrCopy(e->info, "(ASP request failed, OT ", sizeof(e->info));
+					if (err < 0) { StrCat(e->info, "-"); err = -err; }
+					UToStr((unsigned long) err, nb); StrCat(e->info, nb); StrCat(e->info, ")");
+					gProbeIdx++; continue;
+				}
+			}
+		}
+		gProbeWait = true;
+		gProbeT0 = TickCount();
+		return;
+	}
+	ProbeEnd();
+}
+
 void NC_NbpStart(void)
 {
 	OSStatus err;
+	ProbeEnd();
 	if (!gEnt) gEnt = (NCEntity *) NewPtrClear((long) NC_MAXHOSTS * sizeof(NCEntity));
 	gNEnt = 0;
 	gNbpZone = 0;
@@ -900,13 +1101,95 @@ void NC_NbpStart(void)
 
 Boolean NC_NbpIdle(void)
 {
-	if (!gNbpRunning) return false;
-	NbpLookupZone(gNZones > 0 ? gZones[gNbpZone] : "*");
-	if (++gNbpZone >= gNbpTotal) gNbpRunning = false;
-	return gNbpRunning;
+	if (gNbpRunning) {
+		NbpLookupZone(gNZones > 0 ? gZones[gNbpZone] : "*");
+		gChange++;
+		if (++gNbpZone >= gNbpTotal) { gNbpRunning = false; ProbeBegin(); }
+		return true;
+	}
+	if (gProbePass == PROBE_DONE) return false;
+	ProbeStep();
+	return true;												/* one more call reports the end */
 }
 
-void NC_NbpProgress(short *done, short *total) { *done = gNbpZone; *total = gNbpTotal; }
+void NC_NbpProgress(short *done, short *total)					/* zones, then each entity twice: echo, ASP */
+{
+	*total = (short) (gNbpTotal + 2 * gNEnt);
+	*done = gNbpRunning ? gNbpZone : gProbePass == PROBE_DONE ? *total : (short) (gNbpTotal + gProbePass * gNEnt + gProbeIdx);
+}
+
+	/* PBXGetVolInfo (System 7.5.2 on): sizes in 64 bits - the 16-bit block counts of PBHGetVInfo stop at 2 GB. The
+	   1994 headers lack it; this is its declaration from later Files.h, the layout of an XVolumeParam. */
+typedef struct {
+	QElemPtr		qLink;
+	short			qType, ioTrap;
+	Ptr				ioCmdAddr;
+	ProcPtr			ioCompletion;
+	OSErr			ioResult;
+	StringPtr		ioNamePtr;
+	short			ioVRefNum;
+	unsigned long	ioXVersion;
+	short			ioVolIndex;
+	unsigned long	ioVCrDate, ioVLsMod;
+	short			ioVAtrb;
+	unsigned short	ioVNmFls, ioVBitMap, ioAllocPtr, ioVNmAlBlks;
+	unsigned long	ioVAlBlkSiz, ioVClpSiz;
+	unsigned short	ioAlBlSt;
+	unsigned long	ioVNxtCNID;
+	unsigned short	ioVFrBlk, ioVSigWord;
+	short			ioVDrvInfo, ioVDRefNum, ioVFSID;
+	unsigned long	ioVBkUp;
+	short			ioVSeqNum;
+	unsigned long	ioVWrCnt, ioVFilCnt, ioVDirCnt;
+	long			ioVFndrInfo[8];
+	unsigned long	ioVTotalHi, ioVTotalLo, ioVFreeHi, ioVFreeLo;
+} XVolParam;
+#pragma parameter __D0 MNSXGetVolInfo(__A0)
+pascal OSErr MNSXGetVolInfo(XVolParam *pb) = { 0x7012, 0xA260 };	/* MOVEQ #$12,D0; _HFSDispatch */
+
+	/* the mounted volumes: an AppleShare volume tells its server's AppleTalk address through GetVolParms */
+static NCVolume gVol[16];
+static short gNVol = 0;
+
+void NC_VolumeRead(void)
+{
+	HParamBlockRec pb;
+	GetVolParmsInfoBuffer vp;
+	Str255 name;
+	short i, k;
+	gNVol = 0;
+	for (i = 1; gNVol < 16; i++) {
+		OTMemzero(&pb, sizeof(pb));
+		name[0] = 0;
+		pb.volumeParam.ioNamePtr = name;
+		pb.volumeParam.ioVolIndex = i;
+		if (PBHGetVInfoSync(&pb) != noErr) break;
+		for (k = 0; k < name[0] && k < 31; k++) gVol[gNVol].name[k] = (char) name[k + 1];
+		gVol[gNVol].name[k] = 0;
+		gVol[gNVol].totalK = (long) pb.volumeParam.ioVNmAlBlks * (pb.volumeParam.ioVAlBlkSiz / 512) / 2;
+		gVol[gNVol].freeK = (long) pb.volumeParam.ioVFrBlk * (pb.volumeParam.ioVAlBlkSiz / 512) / 2;
+		gVol[gNVol].serverAdr = 0;
+		{
+			XVolParam xp;
+			OTMemzero(&xp, sizeof(xp));
+			xp.ioVRefNum = pb.volumeParam.ioVRefNum;
+			if (MNSXGetVolInfo(&xp) == noErr && (xp.ioVTotalHi || xp.ioVTotalLo)) {	/* bytes to KB */
+				gVol[gNVol].totalK = (long) ((xp.ioVTotalHi << 22) | (xp.ioVTotalLo >> 10));
+				gVol[gNVol].freeK = (long) ((xp.ioVFreeHi << 22) | (xp.ioVFreeLo >> 10));
+			}
+		}
+		OTMemzero(&vp, sizeof(vp));
+		pb.ioParam.ioNamePtr = NULL;
+		pb.ioParam.ioBuffer = (Ptr) &vp;
+		pb.ioParam.ioReqCount = sizeof(vp);
+		if (PBHGetVolParmsSync(&pb) == noErr) gVol[gNVol].serverAdr = (unsigned long) vp.vMServerAdr;
+		gNVol++;
+	}
+}
+
+short NC_VolumeCount(void) { return gNVol; }
+
+const NCVolume *NC_Volume(short i) { return (i >= 0 && i < gNVol) ? &gVol[i] : NULL; }
 short NC_EntityCount(void) { return gNEnt; }
 const NCEntity *NC_Entity(short i) { return (gEnt && i >= 0 && i < gNEnt) ? &gEnt[i] : NULL; }
 
@@ -1724,10 +2007,25 @@ long NC_BuildATReport(char *buf, long max)
 		if (ai.router[0]) { App(buf, &o, max, "\trouter "); App(buf, &o, max, ai.router); }
 		App(buf, &o, max, ai.isExtended ? "\textended network" CR : "\tLocalTalk-style network" CR);
 	}
-	App(buf, &o, max, CR "Object\tType\tZone\tAddress" CR);
+	App(buf, &o, max, CR "Object\tType\tZone\tAddress\tEcho ms\tServer" CR);
 	for (i = 0; gEnt && i < gNEnt; i++) {
 		App(buf, &o, max, gEnt[i].object); App(buf, &o, max, "\t"); App(buf, &o, max, gEnt[i].type); App(buf, &o, max, "\t");
-		App(buf, &o, max, gEnt[i].zone); App(buf, &o, max, "\t"); App(buf, &o, max, gEnt[i].address); App(buf, &o, max, CR);
+		App(buf, &o, max, gEnt[i].zone); App(buf, &o, max, "\t"); App(buf, &o, max, gEnt[i].address); App(buf, &o, max, "\t");
+		if (gEnt[i].rttUs != -2) { NC_RttToStr(gEnt[i].rttUs, nb); App(buf, &o, max, nb); }
+		App(buf, &o, max, "\t"); App(buf, &o, max, gEnt[i].info); App(buf, &o, max, CR);
+	}
+	NC_VolumeRead();
+	App(buf, &o, max, CR "Volume\tServer\tSize KB\tFree KB" CR);
+	for (i = 0; i < NC_VolumeCount(); i++) {
+		const NCVolume *v = NC_Volume(i);
+		App(buf, &o, max, v->name); App(buf, &o, max, "\t");
+		if (v->serverAdr) {
+			UToStr(v->serverAdr >> 16, nb); App(buf, &o, max, nb); App(buf, &o, max, ".");
+			UToStr((v->serverAdr >> 8) & 0xFF, nb); App(buf, &o, max, nb); App(buf, &o, max, ":");
+			UToStr(v->serverAdr & 0xFF, nb); App(buf, &o, max, nb);
+		}
+		App(buf, &o, max, "\t"); UToStr((unsigned long) v->totalK, nb); App(buf, &o, max, nb);
+		App(buf, &o, max, "\t"); UToStr((unsigned long) v->freeK, nb); App(buf, &o, max, nb); App(buf, &o, max, CR);
 	}
 	return o;
 }
@@ -1735,6 +2033,7 @@ long NC_BuildATReport(char *buf, long max)
 void NC_Shutdown(void)
 {
 	short i;
+	ProbeEnd();
 	for (i = 0; i < NC_MAXSLOTS; i++)
 		if (gSlots[i].busy && gSlots[i].ep) { OTRemoveNotifier(gSlots[i].ep); OTCloseProvider(gSlots[i].ep); gSlots[i].busy = false; }
 	ClosePing();

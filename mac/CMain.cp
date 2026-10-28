@@ -731,8 +731,7 @@ void CMain::Pump(long *maxSleep)
 			else stage = 0;
 		}
 	} else if (stage == 2) {
-		if (!NC_NbpIdle()) stage = 0;
-		if (view == kViewAT) atPane->Refresh();				/* NBP: one zone per call, show each */
+		if (!NC_NbpIdle()) { stage = 0; if (view == kViewAT) atPane->Refresh(); }	/* else: the change count redraws */
 	}
 	act = NC_ActivityCount();
 	if (act != lastActivity) {
@@ -897,7 +896,7 @@ void CMain::ShowStatus()
 		short d, t;
 		NC_NbpProgress(&d, &t);
 		done = d; total = t;
-		CCat(s, "Looking up AppleTalk devices  zone "); CCatNum(s, d); CCat(s, "/"); CCatNum(s, t);
+		CCat(s, "Looking up AppleTalk devices, echo, server status  "); CCatNum(s, d); CCat(s, "/"); CCatNum(s, t);
 	} else if (NC_Listening()) {
 		NCListenStats ls;
 		NC_ListenGetStats(&ls);
