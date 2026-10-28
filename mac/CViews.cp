@@ -515,6 +515,7 @@ void CMapPane::DrawMap(Rect *rp)
 		DrawC(kGroupName[g]);
 	}
 	for (i = 0; i < m; i++) {									/* station nodes: filled, lit when just heard */
+		Boolean self = FALSE;
 		SetRect(&k, (short) (outerPt[i].h - 6), (short) (outerPt[i].v - 6), (short) (outerPt[i].h + 6),
 				(short) (outerPt[i].v + 6));
 		s[0] = '\0';
@@ -522,26 +523,30 @@ void CMapPane::DrawMap(Rect *rp)
 			const NCStation *st = NC_Station(outerSt[i]);
 			RGBForeColor((now - st->lastTick < 180) ? &kAlive : &kStatusLn);
 			PaintOval(&k);
-			if ((st->seen & NC_SEEN_SELF) || (st->ip != 0 && st->ip == NC_LocalIP())) CCat(s, "this Mac");
+			self = (Boolean) ((st->seen & NC_SEEN_SELF) || (st->ip != 0 && st->ip == NC_LocalIP()));
+			if (self) CCat(s, "this Mac");
 			else if (st->name[0]) CCat(s, st->name);
 			else if (st->ip) NC_IPToStr(st->ip, s);
 			else NC_MACToStr(st->mac, s);
 		} else {												/* hollow: only ever a destination */
 			RGBForeColor(&kBox);
 			PaintOval(&k);
-			if (outerIP[i] == NC_LocalIP()) CCat(s, "this Mac");
+			self = (Boolean) (outerIP[i] == NC_LocalIP());
+			if (self) CCat(s, "this Mac");
 			else NC_IPToStr(outerIP[i], s);
 		}
 		RGBForeColor(&kInk);
 		FrameOval(&k);
+		if (self) { TextFace(bold); TextSize(12); }					/* the one node the reader looks for */
 		w = WidthC(s);
 		if (w > 110) w = 110;
 		if (outerPt[i].h > cx + 12) { x = (short) (outerPt[i].h + 10); y = (short) (outerPt[i].v + 3); }
 		else if (outerPt[i].h < cx - 12) { x = (short) (outerPt[i].h - 10 - w); y = (short) (outerPt[i].v + 3); }
 		else { x = (short) (outerPt[i].h - w / 2); y = (short) (outerPt[i].v < cy ? outerPt[i].v - 9 : outerPt[i].v + 17); }
-		RGBForeColor(outerSt[i] >= 0 ? &kInk : &kInkSoft);
+		RGBForeColor(outerSt[i] >= 0 || self ? &kInk : &kInkSoft);
 		MoveTo(x, y);
 		DrawTrunc(s, 110);
+		if (self) { TextFace(normal); TextSize(9); }
 	}
 
 	x = (short) (r.left + 14);									/* legend */
