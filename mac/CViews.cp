@@ -211,6 +211,24 @@ void DemoText(const char *in, char *out, short max)
 					continue;
 				}
 			}
+			/* an ip6.arpa reverse name: single hex digits between dots ("1.e.7.3.5..."), an IPv6 address backwards */
+			for (L = 0, colons = 0; i + L + 1 < n && DemoHex(in[i + L]) && in[i + L + 1] == '.'; L += 2) colons++;
+			if (colons >= 8) {
+				static const char hx[] = "0123456789abcdef";
+				Boolean last = (Boolean) (i + L < n && DemoHex(in[i + L]) && (i + L + 1 == n || !DemoAlnum(in[i + L + 1])));
+				h = DemoHash(in + i, L);
+				for (j = 0; j < colons; j++) {
+					h = h * 1103515245UL + 12345UL;					/* a stream of made-up nibbles */
+					if (o < max - 2) { out[o++] = hx[(h >> 16) & 15]; out[o++] = '.'; }
+				}
+				if (last) {											/* a final digit without its dot */
+					h = h * 1103515245UL + 12345UL;
+					if (o < max - 1) out[o++] = hx[(h >> 16) & 15];
+					L++;
+				}
+				i = (short) (i + L);
+				continue;
+			}
 			/* an mDNS instance or host name: "name.local", "name._service" - a name the engine may not list */
 			if (in[i] != '_' && (i == 0 || in[i - 1] == ' ')) {		/* not "link" of "_companion-link._tcp" */
 				for (L = 0; i + L < n && (DemoAlnum(in[i + L]) || in[i + L] == '-'); L++) ;
