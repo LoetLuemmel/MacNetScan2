@@ -8,7 +8,7 @@
 #define kMonaco			4
 #define kWinWidth		720
 #define kWinHeight		460
-#define kStripHeight	48
+#define kStripHeight	30
 #define kStatusHeight	24
 #define kReportMax		32000L
 #define kListWidth		510				/* the IP view: table 0..510, detail panel 510..720	*/
@@ -21,36 +21,39 @@
 #define kColSvc			292				/* one LED per service, kSvcPitch apart			*/
 #define kSvcPitch		20
 
-	// Colours: a dark instrument strip over a light work area. Greys for surfaces and text, one accent (blue) for
-	// selection, muted status colours, category colours of one family. Every colour is a step of the 8-bit
-	// screen's 6x6x6 cube ($00 $33 $66 $99 $CC $FF): QuickDraw would otherwise round it to the nearest - and louder -
-	// cube entry. Shades of grey come from the CLUT's grey ramp.
-static const RGBColor kStrip     = { 0x2600, 0x2B00, 0x3400 };
-static const RGBColor kStripLine = { 0x4A00, 0x5200, 0x6000 };
-static const RGBColor kStripText = { 0xD000, 0xD600, 0xE000 };
-static const RGBColor kBtnDown   = { 0x1600, 0x1A00, 0x2000 };
-static const RGBColor kDimIcon   = { 0x5800, 0x5E00, 0x6800 };
-static const RGBColor kGo        = { 0x3333, 0xCCCC, 0x6666 };
-static const RGBColor kHalt      = { 0xCCCC, 0x3333, 0x3333 };
-static const RGBColor kIconLight = { 0xC800, 0xD000, 0xDC00 };
-static const RGBColor kAccent    = { 0x3333, 0x6666, 0xCCCC };
-static const RGBColor kTabOff    = { 0x3400, 0x3A00, 0x4600 };
-static const RGBColor kViewBg    = { 0xF600, 0xF700, 0xF900 };
-static const RGBColor kRowAlt    = { 0xEA00, 0xEE00, 0xF400 };
-static const RGBColor kInk       = { 0x1C00, 0x2000, 0x2800 };
-static const RGBColor kInkSoft   = { 0x6000, 0x6600, 0x7000 };
-static const RGBColor kStatusBg  = { 0xE200, 0xE400, 0xE800 };
-static const RGBColor kStatusLn  = { 0xB000, 0xB400, 0xBC00 };
-static const RGBColor kBarTrack  = { 0xC400, 0xC800, 0xD000 };
-static const RGBColor kBarFill   = { 0x6666, 0x9999, 0xCCCC };
-static const RGBColor kLedAct    = { 0xFFFF, 0xCCCC, 0x3333 };
-static const RGBColor kAlive     = { 0x3333, 0xCCCC, 0x6666 };
-static const RGBColor kSelRow    = { 0xCCCC, 0xCCCC, 0xFFFF };
-static const RGBColor kHeaderBg  = { 0xE600, 0xE900, 0xEE00 };
-static const RGBColor kDetailBg  = { 0xEC00, 0xEE00, 0xF200 };
-static const RGBColor kRttGood   = { 0x3333, 0x9999, 0x6666 };
-static const RGBColor kRttFair   = { 0xCCCC, 0x9999, 0x3333 };
-static const RGBColor kRttSlow   = { 0xCCCC, 0x6666, 0x3333 };
+	// Colours: System 7 as it looked in 1995 - a platinum tool bar of bevelled buttons (white light from the top
+	// left, a grey shadow bottom right, a black outline), black icons and text, white work areas, grey rules, the
+	// default highlight colour for selections and a little colour where it carries meaning (LEDs, RTT, meters).
+	// Every colour is a step of the 8-bit screen's 6x6x6 cube ($00 $33 $66 $99 $CC $FF) or of the CLUT's grey ramp
+	// ($11 $22 $44 $55 $77 $88 $AA $BB $DD $EE): QuickDraw would otherwise round it to the nearest entry.
+static const RGBColor kStrip     = { 0xDDDD, 0xDDDD, 0xDDDD };	/* platinum: tool bar, headers, status bar	*/
+static const RGBColor kStripLine = { 0x0000, 0x0000, 0x0000 };
+static const RGBColor kStripText = { 0x0000, 0x0000, 0x0000 };
+static const RGBColor kBevelHi   = { 0xFFFF, 0xFFFF, 0xFFFF };
+static const RGBColor kBevelLo   = { 0x8888, 0x8888, 0x8888 };
+static const RGBColor kBtnDown   = { 0xBBBB, 0xBBBB, 0xBBBB };
+static const RGBColor kDimIcon   = { 0x8888, 0x8888, 0x8888 };
+static const RGBColor kGo        = { 0x0000, 0x9999, 0x3333 };
+static const RGBColor kHalt      = { 0xCCCC, 0x0000, 0x0000 };
+static const RGBColor kAccent    = { 0x0000, 0x0000, 0x0000 };	/* info boxes and the Map's selection ring	*/
+static const RGBColor kViewBg    = { 0xFFFF, 0xFFFF, 0xFFFF };
+static const RGBColor kRowAlt    = { 0xFFFF, 0xFFFF, 0xFFFF };	/* no zebra stripes in 1995					*/
+static const RGBColor kInk       = { 0x0000, 0x0000, 0x0000 };
+static const RGBColor kInkSoft   = { 0x5555, 0x5555, 0x5555 };
+static const RGBColor kStatusBg  = { 0xDDDD, 0xDDDD, 0xDDDD };
+static const RGBColor kStatusLn  = { 0x8888, 0x8888, 0x8888 };
+static const RGBColor kBarTrack  = { 0xEEEE, 0xEEEE, 0xEEEE };
+static const RGBColor kBarFill   = { 0x4444, 0x4444, 0x4444 };	/* the Finder's copy bar					*/
+static const RGBColor kLedAct    = { 0xFFFF, 0xFFFF, 0x0000 };	/* ACT: shrill yellow when something answers,	*/
+static const RGBColor kLedActOff = { 0x9999, 0x9999, 0x0000 };	/* dark yellow (olive) at rest				*/
+static const RGBColor kAlive     = { 0x0000, 0xCCCC, 0x3333 };
+static const RGBColor kSelRow    = { 0xCCCC, 0xCCCC, 0xFFFF };	/* System 7's default highlight colour		*/
+static const RGBColor kHeaderBg  = { 0xDDDD, 0xDDDD, 0xDDDD };
+static const RGBColor kDetailBg  = { 0xFFFF, 0xFFFF, 0xFFFF };
+static const RGBColor kRttGood   = { 0x0000, 0x9999, 0x3333 };
+static const RGBColor kRttFair   = { 0xCCCC, 0x9999, 0x0000 };
+static const RGBColor kRttSlow   = { 0xCCCC, 0x3333, 0x0000 };
+static const RGBColor kGrid      = { 0x8888, 0x8888, 0x8888 };	/* Excel's dotted cell lines				*/
 static const RGBColor kWhiteC    = { 0xFFFF, 0xFFFF, 0xFFFF };
 static const RGBColor kBlackC    = { 0x0000, 0x0000, 0x0000 };
 
@@ -138,32 +141,83 @@ static short WidthC(const char *c)
 	return StringWidth(p);
 }
 
-	// A round LED: dark rim, the colour when lit (a quarter of it when dark), a glint.
+	// A round LED, drawn flat like a 1995 control: a black rim, the colour when lit, white when dark.
 static void DrawLed(Rect *r, const RGBColor *c, Boolean lit)
 {
-	RGBColor dim, glint;
-	Rect in = *r, g;
-
-	RGBForeColor(&kBlackC);
-	PaintOval(r);
+	Rect in = *r;
 	InsetRect(&in, 1, 1);
-	if (lit) RGBForeColor(c);
-	else {
-		dim.red = (unsigned short) (0x3400 + c->red / 10);	/* dark: grey with a hint of the colour */
-		dim.green = (unsigned short) (0x3600 + c->green / 10);
-		dim.blue = (unsigned short) (0x3C00 + c->blue / 10);
-		RGBForeColor(&dim);
-	}
+	RGBForeColor(lit ? c : &kWhiteC);
 	PaintOval(&in);
-	g.left = (short) (in.left + (in.right - in.left) / 5);
-	g.top = (short) (in.top + (in.bottom - in.top) / 6);
-	g.right = (short) (g.left + (in.right - in.left) * 2 / 5);
-	g.bottom = (short) (g.top + (in.bottom - in.top) / 3);
-	if (lit) { glint.red = 0xFFFF; glint.green = 0xFFFF; glint.blue = 0xFFFF; }
-	else { glint.red = (unsigned short) (dim.red + 0x0C00); glint.green = (unsigned short) (dim.green + 0x0C00);
-		   glint.blue = (unsigned short) (dim.blue + 0x0C00); }
-	RGBForeColor(&glint);
-	PaintOval(&g);
+	RGBForeColor(lit ? &kBlackC : &kBevelLo);
+	FrameOval(r);
+	RGBForeColor(&kBlackC);
+}
+
+	// Excel's grid: dotted grey lines between rows and cells, switched by the tool bar's grid button (and View >
+	// Grid Lines). gShowGrid lives in CMain.cp. A 50% pattern in patOr: the dots in grey, the gaps left as they are.
+extern Boolean gShowGrid;
+
+static void DotLine(short x0, short y0, short x1, short y1)
+{
+	Pattern dots;
+	short i;
+	for (i = 0; i < 8; i++) dots.pat[i] = (unsigned char) ((i & 1) ? 0x55 : 0xAA);
+	RGBForeColor(&kGrid);
+	PenPat(&dots);
+	PenMode(patOr);
+	MoveTo(x0, y0);
+	LineTo(x1, y1);
+	PenNormal();
+	RGBForeColor(&kBlackC);
+}
+
+	// One table row's grid: a dotted line along its bottom and one at each column edge (left + xs[i] - 4).
+static void GridRow(const Rect *row, short left, const short *xs, short n)
+{
+	short i;
+	if (!gShowGrid) return;
+	DotLine(row->left, (short) (row->bottom - 1), (short) (row->right - 1), (short) (row->bottom - 1));
+	for (i = 0; i < n; i++)
+		DotLine((short) (left + xs[i] - 4), row->top, (short) (left + xs[i] - 4), (short) (row->bottom - 1));
+}
+
+	// A bevelled button face (Excel's tool bar): a black outline with its corner pixels in the background colour,
+	// white light top left and a grey shadow bottom right when up; pressed, the shadow moves top left.
+static void DrawBevel(const Rect *r, Boolean down, const RGBColor *bg)
+{
+	Rect in = *r;
+	short l = r->left, t = r->top, rt = (short) (r->right - 1), b = (short) (r->bottom - 1);
+
+	InsetRect(&in, 1, 1);
+	RGBForeColor(down ? &kBtnDown : &kStrip);
+	PaintRect(&in);
+	RGBForeColor(&kBlackC);
+	FrameRect(r);
+	RGBForeColor(bg);
+	MoveTo(l, t); LineTo(l, t);
+	MoveTo(rt, t); LineTo(rt, t);
+	MoveTo(l, b); LineTo(l, b);
+	MoveTo(rt, b); LineTo(rt, b);
+	if (down) {
+		RGBForeColor(&kBevelLo);
+		MoveTo((short) (l + 1), (short) (b - 1)); LineTo((short) (l + 1), (short) (t + 1)); LineTo((short) (rt - 1), (short) (t + 1));
+	} else {
+		RGBForeColor(&kBevelHi);
+		MoveTo((short) (l + 1), (short) (b - 2)); LineTo((short) (l + 1), (short) (t + 1)); LineTo((short) (rt - 2), (short) (t + 1));
+		RGBForeColor(&kBevelLo);
+		MoveTo((short) (l + 1), (short) (b - 1)); LineTo((short) (rt - 1), (short) (b - 1)); LineTo((short) (rt - 1), (short) (t + 1));
+	}
+	RGBForeColor(&kBlackC);
+}
+
+	// A sunken well (the status bar's fields): grey shadow top left, white light bottom right.
+static void DrawWell(const Rect *r)
+{
+	RGBForeColor(&kBevelLo);
+	MoveTo(r->left, (short) (r->bottom - 1)); LineTo(r->left, r->top); LineTo((short) (r->right - 1), r->top);
+	RGBForeColor(&kBevelHi);
+	MoveTo((short) (r->left + 1), (short) (r->bottom - 1)); LineTo((short) (r->right - 1), (short) (r->bottom - 1));
+	LineTo((short) (r->right - 1), (short) (r->top + 1));
 	RGBForeColor(&kBlackC);
 }
 

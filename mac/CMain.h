@@ -35,14 +35,15 @@ class CMain;
 #define cmdViewTools	613L	/*            Tools					*/
 #define cmdViewMap		614L	/*            Map					*/
 #define cmdViewFrames	615L	/*            Frames				*/
+#define cmdGrid			616L	/*            Grid Lines (on/off)	*/
 #define cmdToolPing		620L	/* Tools view buttons				*/
 #define cmdToolDns		621L
 #define cmdToolTrace	622L
 
 enum { kViewIP = 0, kViewAT, kViewListen, kViewTools, kViewMap, kViewFrames, kViewCount };
 
-	// A button of the tool strip: an icon drawn in QuickDraw, a label under it.
-enum { kIconScan, kIconStop, kIconExport, kIconCopy };
+	// A button of the tool bar: a bevelled 24 x 22 face, a 16 x 16 icon drawn in QuickDraw.
+enum { kIconScan, kIconStop, kIconExport, kIconCopy, kIconGrid };
 
 class CToolButton : public CPane
 {
@@ -53,6 +54,7 @@ public:
 	virtual	void	Draw(Rect *area);
 	virtual	void	DoClick(Point hitPt, short modifierKeys, long when);
 	void			SetActive(Boolean anActive);	// CPane::SetEnabled is TCL's own
+	void			SetDown(Boolean aDown);			// a toggle (the grid): stays down while on
 
 protected:
 	void			DrawButton(Boolean pressed);
@@ -61,9 +63,10 @@ protected:
 	short			icon;
 	long			command;
 	Boolean			active;
+	Boolean			down;
 };
 
-	// The view tabs: a segmented control, one segment per view.
+	// The view buttons: one sticky bevel button per view, the current one down.
 class CTabBar : public CPane
 {
 public:
@@ -77,7 +80,7 @@ protected:
 	short			current;
 };
 
-	// A round LED with a glint; lit in its colour, dark otherwise.
+	// The ACT LED: lit in its colour, dark yellow at rest.
 class CLedPane : public CPane
 {
 public:
@@ -90,6 +93,23 @@ public:
 protected:
 	RGBColor		colour;
 	Boolean			lit;
+};
+
+	// The logo at the tool bar's right end, as Netscape had its "N": a radar scope in a sunken well.
+	// While MacNetScan scans or listens the sweep turns and the hosts found light up as it passes
+	// them (angle from the last octet, distance from the round trip). A click opens the About box.
+class CLogoPane : public CPane
+{
+public:
+	CLogoPane(CView *anEnclosure, CBureaucrat *aSupervisor, short aHEncl, short aVEncl);
+
+	virtual	void	Draw(Rect *area);
+	virtual	void	DoClick(Point hitPt, short modifierKeys, long when);
+	void			Step(Boolean aRunning);		// from Pump: turn the sweep, at most every 4 ticks
+
+protected:
+	short			sweep;					// 0..15, clockwise from 12 o'clock
+	unsigned long	lastStep;
 };
 
 	// The tool strip behind the buttons, tabs and LED.
@@ -206,9 +226,10 @@ protected:
 	Boolean	Busy(void);				// a sweep, a lookup, listening or a tool is running
 
 	CStripPane	*strip;
-	CToolButton	*scanBtn, *stopBtn, *exportBtn, *copyBtn;
+	CToolButton	*scanBtn, *stopBtn, *exportBtn, *copyBtn, *gridBtn;
 	CTabBar		*tabs;
 	CLedPane	*actLed;
+	CLogoPane	*logo;
 	CATPane		*atPane;		// the AppleTalk, Listen and Tools views (CViews.cp)
 	CScrollPane	*atScroll;		// AppleTalk scrolls
 	CListenPane	*listenPane;

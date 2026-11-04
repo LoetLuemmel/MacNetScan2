@@ -270,7 +270,10 @@ void CATPane::Draw(Rect *area)
 		if (y - 13 > vis.bottom || y + 5 < vis.top) continue;	/* not in sight */
 		SetRect(&row, (short) (r.left + 8), (short) (y - 13), (short) (r.right - 8), (short) (y + 5));
 		if (i == sel) { RGBForeColor(&kSelRow); PaintRect(&row); }
-		else if (i & 1) { RGBForeColor(&kRowAlt); PaintRect(&row); }
+		{
+			static const short kEnCols[] = { 260, 420, 560, 632 };
+			GridRow(&row, r.left, kEnCols, 4);
+		}
 		if (HasText(e->type, "AFP")) c = &kTypeAFP;
 		else if (HasText(e->type, "LaserWriter") || HasText(e->type, "Print")) c = &kTypePrint;
 		else if (HasText(e->type, "Workstation") || HasText(e->type, "Macintosh")) c = &kTypeWS;

@@ -127,8 +127,8 @@ protected:
 	short			mode;					// 0 nothing yet, 1 ping, 2 DNS, 3 traceroute
 };
 
-	// A light push button for the work area (CToolButton is the dark strip's). While its
-	// tool runs it stays down - accent blue - so the view shows what is going on.
+	// A bevelled push button for the work area (CToolButton is the tool bar's). While its
+	// tool runs it stays down, so the view shows what is going on.
 class CLightButton : public CPane
 {
 public:

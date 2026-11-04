@@ -18,7 +18,9 @@ System 7.6.1 guest in Basilisk II through [AppleBridge](https://github.com/LoetL
 | **Frames** | The capture behind Listen as a packet list - number, time, source, destination, protocol (coloured), length, a one-line summary - and below it the selected frame's protocol tree (link, ARP/AARP, IPv4/IPv6, TCP/UDP/ICMP/ICMPv6, DNS/mDNS/LLMNR, DHCP, LLDP, DDP/NBP; NetBIOS and ATP in the summary line) and its bytes in hex. The last 400 frames, 384 bytes of each. The list follows the newest frame; a click on a frame holds it still, a second click lets it follow again. Open Transport hands frames over without their MAC header, so the link layer shows the sender and the type only. **Export** writes the frames kept as a pcap file for Wireshark, link type 113 (Linux cooked capture), which needs no MAC header - just the sender and EtherType Open Transport hands on; timestamps in UTC (set the guest's Map control panel, or they are off by its time zone). |
 
 Plus: **Export / Copy** of what the view shows, tab-delimited - the IP sweep (IP Network, Tools), the NBP entities (AppleTalk), counters, stations and events (Listen, Map), in Frames a pcap file and the selected frame as text, **Scan › Options** (range, timeout, probes at once, ports; kept in
-`MacNetScan Prefs`), an About box with MacNetScan 1's radar sweep, a Finder icon.
+`MacNetScan Prefs`), an About box with MacNetScan 1's radar sweep, a Finder icon. The look is a 1995 one: a platinum tool bar of bevelled
+buttons as in Excel, a radar scope at its right end that turns while a scan or Listen runs (a click opens the About box),
+and Excel's dotted grid in every table - the grid button beside Copy, or **View › Grid Lines** (⌘G), switches it.
 
 | Listen | AppleTalk | Tools |
 |---|---|---|
@@ -33,7 +35,7 @@ mac/         the TCL application: CMain (window, tool strip, IP view), CViews (L
              Frames, About, Options), CATView (AppleTalk), CApp; Look.h shared colours and helpers; Menus.r, Extras.r, Icons.r
 mac/generated/  what Visual Architect generated, for reference
 mac/rsrc/    Visual Architect.rsrc and Project Resources.rsrc as MacBinary
-tools/       mkicons.py (Finder icons from a PNG), patch_otlibs.py (see below), mkotnames.py (OTNames.h)
+tools/       pixicons.py (the Finder icons, drawn pixel by pixel), mkicons.py (the first ones, from a PNG), patch_otlibs.py (see below), mkotnames.py (OTNames.h)
 probe/       the spikes: OTProbe (engine test bench) and SniffProbe (raw Ethernet, five runs)
 original/    MacNetScan 1 (MPW, one C file)
 ```

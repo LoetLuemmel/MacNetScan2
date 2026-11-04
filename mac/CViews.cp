@@ -174,11 +174,9 @@ void CListenPane::Draw(Rect *area)
 	TextFont(kGeneva); TextSize(9);
 	for (j = 0; j < shown; j++, y += 16) {
 		const NCStation *st = NC_Station(order[j]);
-		if (j & 1) {
-			SetRect(&row, (short) (r.left + 8), (short) (y - 12), (short) (r.right - 8), (short) (y + 4));
-			RGBForeColor(&kRowAlt);
-			PaintRect(&row);
-		}
+		static const short kStCols[] = { 160, 270, 360, 470, 560 };
+		SetRect(&row, (short) (r.left + 8), (short) (y - 12), (short) (r.right - 8), (short) (y + 4));
+		GridRow(&row, r.left, kStCols, 5);
 		SetRect(&k, (short) (r.left + 12), (short) (y - 10), (short) (r.left + 22), y);
 		DrawLed(&k, &kAlive, (Boolean) (now - st->lastTick < 180));	/* lit: heard in the last 3 s */
 		TextFont(kMonaco);
@@ -638,6 +636,7 @@ void CMapPane::DrawInfo(Rect *rp, const Point *node)
  ******************************************************************************/
 
 enum { kFcNo = 6, kFcTime = 46, kFcSrc = 108, kFcDst = 232, kFcProto = 356, kFcLen = 414, kFcInfo = 450 };
+static const short kFcCols[] = { kFcTime, kFcSrc, kFcDst, kFcProto, kFcLen, kFcInfo };	/* the grid's columns */
 
 static const RGBColor *ProtoColour(unsigned short type)		/* the Listen meters' colours */
 {
@@ -703,6 +702,15 @@ void CFrameList::Draw(Rect *area)
 	PaintRect(area);
 	TextFont(kGeneva); TextSize(9); TextFace(normal);
 	GetLengths(&w, &h);
+	if (gShowGrid) {										/* the grid on below the last frame */
+		for (i = rows; ; i++) {
+			lr.top = i * kFrameRow; lr.bottom = lr.top + kFrameRow;
+			lr.left = 0; lr.right = frame.right - frame.left;
+			FrameToQDR(&lr, &r);
+			if (r.top > area->bottom) break;
+			if (r.bottom >= area->top) GridRow(&r, r.left, kFcCols, 6);
+		}
+	}
 	for (i = 0; i < rows; i++) {
 		const NCFrame *f = NC_Frame(first + i);
 		lr.top = i * kFrameRow; lr.bottom = lr.top + kFrameRow;
@@ -710,7 +718,7 @@ void CFrameList::Draw(Rect *area)
 		FrameToQDR(&lr, &r);
 		if (!SectRect(&r, area, &cut)) continue;
 		if (first + i == sel) { RGBForeColor(&kSelRow); PaintRect(&r); }
-		else if (i & 1) { RGBForeColor(&kRowAlt); PaintRect(&r); }
+		GridRow(&r, r.left, kFcCols, 6);
 		y = (short) (r.top + 10);
 		RGBForeColor(&kInkSoft);
 		s[0] = '\0'; CCatNum(s, first + i + 1);
@@ -908,12 +916,10 @@ void CToolsPane::Draw(Rect *area)
 		y = (short) (y + 20);
 		for (i = 0; i < n && y < r.bottom - 6; i++, y += 16) {
 			const NCToolLine *l = NC_ToolLine(i);
+			static const short kToolCols[] = { 50, 170, 430 };
 			if (l == NULL) break;
-			if (i & 1) {
-				SetRect(&row, (short) (r.left + 8), (short) (y - 12), (short) (r.right - 8), (short) (y + 4));
-				RGBForeColor(&kRowAlt);
-				PaintRect(&row);
-			}
+			SetRect(&row, (short) (r.left + 8), (short) (y - 12), (short) (r.right - 8), (short) (y + 4));
+			GridRow(&row, r.left, kToolCols, (short) (mode == 2 ? 2 : 3));
 			TextFont(kGeneva); RGBForeColor(&kInk);
 			s[0] = '\0'; CCatNum(s, l->seq);
 			MoveTo((short) (r.left + 14), y); DrawC(s);
@@ -967,20 +973,16 @@ void CLightButton::Draw(Rect *area)
 void CLightButton::DrawButton(Boolean pressed)
 {
 	Rect r;
-	short w;
+	short w, d;
 	pressed = (Boolean) (pressed || running);
 	TextMode(srcOr);
 	FrameToQDR(&frame, &r);
-	RGBForeColor(&kViewBg);
-	PaintRect(&r);
-	RGBForeColor(pressed ? &kAccent : &kBox);
-	PaintRoundRect(&r, 10, 10);
-	RGBForeColor(pressed ? &kAccent : &kStatusLn);
-	FrameRoundRect(&r, 10, 10);
+	DrawBevel(&r, pressed, &kViewBg);
 	TextFont(kGeneva); TextSize(9); TextFace(bold);
-	RGBForeColor(pressed ? &kWhiteC : &kInk);
+	RGBForeColor(&kInk);
+	d = (short) (pressed ? 1 : 0);
 	w = StringWidth(label);
-	MoveTo((short) ((r.left + r.right - w) / 2), (short) (r.bottom - 7));
+	MoveTo((short) ((r.left + r.right - w) / 2 + d), (short) (r.bottom - 7 + d));
 	DrawString(label);
 	TextFace(normal);
 	RGBForeColor(&kBlackC);
