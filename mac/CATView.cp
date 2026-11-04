@@ -231,6 +231,7 @@ void CATPane::Draw(Rect *area)
 		NC_VolumeRead();										/* the mounted volumes, as seldom */
 		if (!NC_ATAvailable()) CCat(info, "AppleTalk is not active on this Mac.");
 		else if (NC_ATInfo(&ai) == 0) {
+			DemoAdd(ai.zone, kDemoZone);					/* the demo mode's registry knows this zone too */
 			CCat(info, "This Mac  "); CCat(info, ai.address);
 			CCat(info, "   zone "); CCat(info, ai.zone[0] ? ai.zone : "*");
 			CCat(info, ai.isExtended ? "   extended network " : "   LocalTalk-style network ");
@@ -285,9 +286,13 @@ void CATPane::Draw(Rect *area)
 		if (e->info[0]) {										/* an AFP server: its machine, the rest on a click */
 			char m[AT_LEN];
 			InfoPart(e->info, 0, m, AT_LEN);
-			RGBForeColor(&kInkSoft);
-			DrawC("  "); DrawTrunc(m, 120);
-			RGBForeColor(&kInk);
+			Point pen;
+			GetPen(&pen);										/* what is left before the Type column */
+			if (pen.h < r.left + 220) {
+				RGBForeColor(&kInkSoft);
+				DrawC("  "); DrawTrunc(m, (short) (r.left + 252 - pen.h - WidthC("  ")));
+				RGBForeColor(&kInk);
+			}
 		}
 		MoveTo((short) (r.left + 260), y); DrawTrunc(e->type, 150);
 		MoveTo((short) (r.left + 420), y); DrawTrunc(e->zone, 130);

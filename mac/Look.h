@@ -94,6 +94,14 @@ static const NCHost *HostByIP(unsigned long ip)
 	return NULL;
 }
 
+	// View > Demo Mode, for screenshots that go public: every text drawn through DrawC, WidthC and DrawTrunc passes
+	// DemoText (CViews.cp) - names become made-up ones, MAC addresses and IPv6 interface IDs invented but stable.
+	// gDemo lives in CViews.cp. DemoAdd registers a name the engine does not list itself (this Mac's zone).
+extern Boolean gDemo;
+enum { kDemoHost = 0, kDemoZone, kDemoVol };
+void DemoText(const char *in, char *out, short max);
+void DemoAdd(const char *real, short kind);
+
 /* ------------------------------------------------------------------ text helpers */
 
 static short CLen(const char *c)
@@ -130,6 +138,8 @@ static void CToPStr(const char *c, Str255 p)
 static void DrawC(const char *c)
 {
 	Str255 p;
+	char t[256];
+	if (gDemo) { DemoText(c, t, sizeof(t)); c = t; }
 	CToPStr(c, p);
 	DrawString(p);
 }
@@ -137,6 +147,8 @@ static void DrawC(const char *c)
 static short WidthC(const char *c)
 {
 	Str255 p;
+	char t[256];
+	if (gDemo) { DemoText(c, t, sizeof(t)); c = t; }
 	CToPStr(c, p);
 	return StringWidth(p);
 }
@@ -243,6 +255,8 @@ static void DrawRtt(short x, short y, long us)
 static void DrawTrunc(const char *c, short maxWidth)			/* DrawString, cut to fit with an ellipsis */
 {
 	Str255 p;
+	char t[256];
+	if (gDemo) { DemoText(c, t, sizeof(t)); c = t; }			/* the made-up text is what gets cut */
 	CToPStr(c, p);
 	if (StringWidth(p) > maxWidth) {
 		while (p[0] > 0 && StringWidth(p) + CharWidth((char) 0xC9) > maxWidth) p[0]--;

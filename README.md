@@ -21,6 +21,9 @@ Plus: **Export / Copy** of what the view shows, tab-delimited - the IP sweep (IP
 `MacNetScan Prefs`), an About box with MacNetScan 1's radar sweep, a Finder icon. The look is a 1995 one: a platinum tool bar of bevelled
 buttons as in Excel, a radar scope at its right end that turns while a scan or Listen runs (a click opens the About box),
 and Excel's dotted grid in every table - the grid button beside Copy, or **View › Grid Lines** (⌘G), switches it.
+**View › Demo Mode** (⌘D) for screenshots and videos that go public: host, NBP and LLDP names become made-up ones
+(the E-Maculation regulars' Macs - "emendelson's Quadra 950"), zones and volumes neutral ones, MAC addresses and IPv6
+interface IDs invented but stable, the Frames hex dump hidden. Display only - Export, Copy and the pcap file stay real.
 
 | Listen | AppleTalk | Tools |
 |---|---|---|

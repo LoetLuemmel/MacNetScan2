@@ -36,6 +36,7 @@ class CMain;
 #define cmdViewMap		614L	/*            Map					*/
 #define cmdViewFrames	615L	/*            Frames				*/
 #define cmdGrid			616L	/*            Grid Lines (on/off)	*/
+#define cmdDemo			617L	/*            Demo Mode (on/off)	*/
 #define cmdToolPing		620L	/* Tools view buttons				*/
 #define cmdToolDns		621L
 #define cmdToolTrace	622L
@@ -224,6 +225,7 @@ protected:
 	void	ExportFrames(void);			// Frames: the capture as pcap
 	void	StartTool(short aMode);
 	Boolean	Busy(void);				// a sweep, a lookup, listening or a tool is running
+	void	RefreshView(void);		// redraw what the current view shows (grid or demo mode switched)
 
 	CStripPane	*strip;
 	CToolButton	*scanBtn, *stopBtn, *exportBtn, *copyBtn, *gridBtn;

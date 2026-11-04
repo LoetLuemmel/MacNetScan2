@@ -1227,17 +1227,28 @@ void CMain::DoCommand(long theCommand)
 		case cmdGrid:
 			gShowGrid = (Boolean) !gShowGrid;
 			gridBtn->SetDown(gShowGrid);
-			if (view == kViewIP) { hostList->Refresh(); listHeader->Refresh(); }
-			else if (view == kViewAT) atPane->Refresh();
-			else if (view == kViewListen) listenPane->Refresh();
-			else if (view == kViewTools) toolsPane->Refresh();
-			else if (view == kViewFrames) frameList->Refresh();
+			RefreshView();
+			break;
+		case cmdDemo:
+			gDemo = (Boolean) !gDemo;
+			RefreshView();
 			break;
 		case cmdToolPing:	StartTool(1); break;
 		case cmdToolDns:	StartTool(2); break;
 		case cmdToolTrace:	StartTool(3); break;
 		default:			x_CMain::DoCommand(theCommand); break;
 	}
+}
+
+
+void CMain::RefreshView()
+{
+	if (view == kViewIP) { hostList->Refresh(); listHeader->Refresh(); detail->Refresh(); }
+	else if (view == kViewAT) atPane->Refresh();
+	else if (view == kViewListen) listenPane->Refresh();
+	else if (view == kViewTools) toolsPane->Refresh();
+	else if (view == kViewMap) mapPane->Update();
+	else if (view == kViewFrames) { framesPane->Refresh(); frameList->Refresh(); }
 }
 
 
@@ -1261,4 +1272,6 @@ void CMain::UpdateMenus()
 	}
 	gBartender->EnableCmd(cmdGrid);
 	gBartender->CheckMarkCmd(cmdGrid, gShowGrid);
+	gBartender->EnableCmd(cmdDemo);
+	gBartender->CheckMarkCmd(cmdDemo, gDemo);
 }

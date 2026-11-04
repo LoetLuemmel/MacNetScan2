@@ -25,6 +25,223 @@
 #include <Script.h>
 #include <Errors.h>
 
+/******************************************************************************
+ Demo mode - made-up names, MACs and IPv6 interface IDs for public screenshots
+
+	A registry maps each real name the engine knows (hosts, NBP objects, LLDP
+	systems, zones, volumes) to a made-up one, in the order they turn up, so a
+	device keeps its name in every view. The hosts become the E-Maculation
+	regulars' Macs - "emendelson's Quadra 950" - a joke for the forum, and plainly
+	no real device. MACs and IPv6 interface IDs are hashed into invented ones,
+	the same input always giving the same output. Display only: Export, Copy and
+	the pcap file stay real.
+
+ ******************************************************************************/
+
+Boolean gDemo = FALSE;
+
+#define kDemoMax	160
+#define kDemoLen	48
+typedef struct { char real[kDemoLen]; char fake[kDemoLen]; short len; } DemoEntry;
+
+static DemoEntry		*gDemoReg = NULL;
+static short			gDemoN = 0, gDemoKindN[3] = { 0, 0, 0 };
+static long				gDemoSig = -1;
+static unsigned long	gDemoTick = 0;
+
+static const char *kDemoWho[] = { "Ronald P. Regensburg", "emendelson", "adespoton", "KnuddlMac", "Mabam",
+	"marciot42", "kanjitalk755", "Cat_7" };
+static const char *kDemoModel[] = { "Quadra 950", "PowerBook 170", "Centris 650", "LC III", "IIci", "SE/30",
+	"Performa 6200", "Power Mac 8100", "Color Classic", "PowerBook Duo 230", "Quadra 700", "IIfx", "Classic II",
+	"PowerBook 540c" };
+static const char *kDemoZoneName[] = { "Engineering", "Marketing", "Lab", "Basement" };
+static const char *kDemoVolName[] = { "Macintosh HD", "Projects", "Archive", "Developer CD", "System Disk",
+	"Applications", "Scratch", "Install CD" };
+#define kDemoWhoN	8
+#define kDemoModelN	14
+
+static Boolean DemoAlnum(char c)
+{
+	return (Boolean) ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'));
+}
+
+static Boolean DemoHex(char c)
+{
+	return (Boolean) ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'));
+}
+
+static unsigned long DemoHash(const char *s, short n)		/* FNV-1a, case folded */
+{
+	unsigned long h = 2166136261UL;
+	short i;
+	for (i = 0; i < n; i++) {
+		char c = s[i];
+		if (c >= 'A' && c <= 'Z') c = (char) (c + 32);
+		h = (h ^ (unsigned char) c) * 16777619UL;
+	}
+	return h;
+}
+
+static void DemoPut(const char *real, short n, const char *fake)
+{
+	short i;
+	for (i = 0; i < gDemoN; i++)
+		if (gDemoReg[i].len == n) {
+			short k = 0;
+			while (k < n && gDemoReg[i].real[k] == real[k]) k++;
+			if (k == n) return;									/* known: keeps its name */
+		}
+	if (gDemoN >= kDemoMax) return;
+	for (i = 0; i < n; i++) gDemoReg[gDemoN].real[i] = real[i];
+	gDemoReg[gDemoN].real[n] = '\0';
+	gDemoReg[gDemoN].len = n;
+	gDemoReg[gDemoN].fake[0] = '\0';
+	CCat(gDemoReg[gDemoN].fake, fake);
+	gDemoN++;
+}
+
+static short DemoFind(const char *real, short n)
+{
+	short i, k;
+	for (i = 0; i < gDemoN; i++)
+		if (gDemoReg[i].len == n) {
+			for (k = 0; k < n && gDemoReg[i].real[k] == real[k]; k++) ;
+			if (k == n) return i;
+		}
+	return -1;
+}
+
+void DemoAdd(const char *real, short kind)
+{
+	char fake[kDemoLen];
+	short n = CLen(real), k, dot;
+
+	if (gDemoReg == NULL) {
+		gDemoReg = (DemoEntry *) NewPtrClear((Size) sizeof(DemoEntry) * kDemoMax);
+		if (gDemoReg == NULL) return;
+	}
+	if (n < 3 || n >= kDemoLen || real[0] == '?' || DemoFind(real, n) >= 0) return;
+	for (k = 0; k < n && ((real[k] >= '0' && real[k] <= '9') || real[k] == '.'); k++) ;
+	if (k == n) return;										/* an address, not a name */
+	k = gDemoKindN[kind]++;
+	fake[0] = '\0';
+	if (kind == kDemoHost) {
+		CCat(fake, kDemoWho[k % kDemoWhoN]); CCat(fake, "'s "); CCat(fake, kDemoModel[(k / kDemoWhoN) % kDemoModelN]);
+		if (k >= kDemoWhoN * kDemoModelN) { CCat(fake, " "); CCatNum(fake, k / (kDemoWhoN * kDemoModelN) + 1); }
+	} else if (kind == kDemoZone) {
+		if (k < 4) CCat(fake, kDemoZoneName[k]); else { CCat(fake, "Zone "); CCatNum(fake, k + 1); }
+	} else {
+		if (k < 8) CCat(fake, kDemoVolName[k]); else { CCat(fake, "Volume "); CCatNum(fake, k + 1); }
+	}
+	DemoPut(real, n, fake);
+	if (kind == kDemoHost) {								/* "unifi" of "unifi.localdomain": the same Mac */
+		for (dot = 0; dot < n && real[dot] != '.'; dot++) ;
+		if (dot >= 3 && dot < n) DemoPut(real, dot, fake);
+	}
+}
+
+static void DemoCollect(void)							/* what the engine knows, when it changed */
+{
+	long sig = NC_ChangeCount() + NC_HostCount() * 7L + NC_EntityCount() * 131L + NC_StationCount() * 1031L
+			   + NC_VolumeCount() * 7919L + NC_ATRouteCount() * 30011L;
+	short i;
+	if (sig == gDemoSig && TickCount() - gDemoTick < 120) return;
+	gDemoSig = sig;
+	gDemoTick = TickCount();
+	for (i = 0; i < NC_HostCount(); i++) DemoAdd(NC_Host(i)->name, kDemoHost);
+	for (i = 0; i < NC_EntityCount(); i++) {
+		const NCEntity *e = NC_Entity(i);
+		if (e == NULL) continue;
+		DemoAdd(e->object, kDemoHost);
+		DemoAdd(e->zone, kDemoZone);
+	}
+	for (i = 0; i < NC_ATRouteCount(); i++) { const NCATRoute *rt = NC_ATRoute(i); if (rt) DemoAdd(rt->zone, kDemoZone); }
+	for (i = 0; i < NC_StationCount(); i++) DemoAdd(NC_Station(i)->name, kDemoHost);
+	for (i = 0; i < NC_VolumeCount(); i++) DemoAdd(NC_Volume(i)->name, kDemoVol);
+}
+
+static void DemoOut(char *out, short *o, short max, const char *s)
+{
+	while (*s && *o < max - 1) out[(*o)++] = *s++;
+}
+
+static void DemoHexOut(char *out, short *o, short max, unsigned long v, short digits)
+{
+	static const char hx[] = "0123456789abcdef";
+	short d;
+	for (d = (short) (digits - 1); d >= 0; d--) if (*o < max - 1) out[(*o)++] = hx[(v >> (d * 4)) & 15];
+}
+
+void DemoText(const char *in, char *out, short max)
+{
+	short i = 0, o = 0, n = CLen(in), j, L, best, bestLen, colons;
+	unsigned long h;
+
+	DemoCollect();
+	while (i < n && o < max - 1) {
+		if (i == 0 || !DemoAlnum(in[i - 1])) {
+			/* a MAC: six pairs of hex digits */
+			if (n - i >= 17 && (n - i == 17 || !DemoAlnum(in[i + 17]))) {
+				for (j = 0; j < 17; j++) if ((j % 3 == 2) ? in[i + j] != ':' : !DemoHex(in[i + j])) break;
+				if (j == 17) {
+					h = DemoHash(in + i, 17);
+					DemoOut(out, &o, max, "02:00:00:");
+					DemoHexOut(out, &o, max, h >> 16 & 0xFF, 2); DemoOut(out, &o, max, ":");
+					DemoHexOut(out, &o, max, h >> 8 & 0xFF, 2); DemoOut(out, &o, max, ":");
+					DemoHexOut(out, &o, max, h & 0xFF, 2);
+					i = (short) (i + 17);
+					continue;
+				}
+			}
+			/* IPv6: hex digits and colons, "::" or seven colons; well-known multicast and loopback stay */
+			for (L = 0, colons = 0; i + L < n && (DemoHex(in[i + L]) || in[i + L] == ':'); L++) if (in[i + L] == ':') colons++;
+			if (colons >= 2 && L >= 4 && (i + L == n || !DemoAlnum(in[i + L]))) {
+				Boolean dbl = FALSE;
+				for (j = 0; j + 1 < L; j++) if (in[i + j] == ':' && in[i + j + 1] == ':') dbl = TRUE;
+				if (dbl || colons == 7) {
+					Boolean keep = (Boolean) ((in[i] == 'f' || in[i] == 'F') && (in[i + 1] == 'f' || in[i + 1] == 'F'));
+					if (keep) { for (j = 0; j < L; j++) if (o < max - 1) out[o++] = in[i + j]; }
+					else {
+						h = DemoHash(in + i, L);
+						if ((in[i] == 'f' || in[i] == 'F') && (in[i + 1] == 'e' || in[i + 1] == 'E')) DemoOut(out, &o, max, "fe80::");
+						else DemoOut(out, &o, max, "fd00::");
+						DemoHexOut(out, &o, max, h >> 16, 4); DemoOut(out, &o, max, ":"); DemoHexOut(out, &o, max, h & 0xFFFF, 4);
+					}
+					i = (short) (i + L);
+					continue;
+				}
+			}
+			/* an mDNS instance or host name: "name.local", "name._service" - a name the engine may not list */
+			if (in[i] != '_' && (i == 0 || in[i - 1] == ' ')) {		/* not "link" of "_companion-link._tcp" */
+				for (L = 0; i + L < n && (DemoAlnum(in[i + L]) || in[i + L] == '-'); L++) ;
+				if (L >= 3 && L < kDemoLen && i + L + 1 < n && in[i + L] == '.'
+					&& (in[i + L + 1] == '_' || (n - i - L >= 6 && in[i + L + 1] == 'l' && in[i + L + 2] == 'o'
+						&& in[i + L + 3] == 'c' && in[i + L + 4] == 'a' && in[i + L + 5] == 'l'))) {
+					char t[kDemoLen];
+					for (j = 0; j < L; j++) t[j] = in[i + j];
+					t[L] = '\0';
+					DemoAdd(t, kDemoHost);
+				}
+			}
+			/* a registered name, the longest that matches here */
+			for (j = 0, best = -1, bestLen = 0; j < gDemoN; j++) {
+				short k;
+				L = gDemoReg[j].len;
+				if (L <= bestLen || L > n - i || (i + L < n && DemoAlnum(in[i + L]))) continue;
+				for (k = 0; k < L && in[i + k] == gDemoReg[j].real[k]; k++) ;
+				if (k == L) { best = j; bestLen = L; }
+			}
+			if (best >= 0) {
+				DemoOut(out, &o, max, gDemoReg[best].fake);
+				i = (short) (i + bestLen);
+				continue;
+			}
+		}
+		out[o++] = in[i++];
+	}
+	out[o] = '\0';
+}
+
 static const RGBColor kConflict   = { 0xCCCC, 0x3333, 0x3333 };
 static const RGBColor kBox        = { 0xFFFF, 0xFFFF, 0xFFFF };
 
@@ -824,6 +1041,12 @@ void CFramesPane::Draw(Rect *area)
 	RGBForeColor(&kStatusLn);									/* the bytes, right */
 	MoveTo((short) (hexX - 8), (short) (top + 6)); LineTo((short) (hexX - 8), (short) (r.bottom - 6));
 	TextFont(kMonaco); TextSize(9);
+	if (gDemo) {												/* raw bytes cannot be made up */
+		RGBForeColor(&kInkSoft);
+		MoveTo(hexX, (short) (top + 16)); DrawC("Bytes hidden in demo mode.");
+		RGBForeColor(&kBlackC);
+		return;
+	}
 	rows = (short) ((r.bottom - 4 - (top + 16)) / 11 + 1);		/* what fits; the last says what does not */
 	if ((f->caplen + 15) / 16 > rows) shown = (long) (rows - 1) * 16; else shown = f->caplen;
 	for (off = 0, y = (short) (top + 16); off < shown; off += 16, y += 11) {
