@@ -1425,12 +1425,32 @@ static NCToolLine *NewLine(void)
 	return l;
 }
 
+/* what a lookup that came back with an error means, in words, with the code to look up */
+static void DnsFailMsg(OTResult r)
+{
+	char nb[12];
+	unsigned long u;
+	InetHost ip;
+	Boolean rev = ParseDotted(gToolHost, &ip);
+	if (r == -23043 || r == -3170 || r == -3162)			/* authNameErr, kOTBadNameErr, kOTNoDataErr */
+		StrCopy(gToolMsg, rev ? "No name for this address (the DNS server has none)."
+							  : "No such host (the DNS server does not know that name).", 256);
+	else if (r == -23044 || r == -3260)					/* noAnsErr, kETIMEDOUTErr */
+		StrCopy(gToolMsg, "The DNS server did not answer.", 256);
+	else if (r == -23041)									/* noNameServer */
+		StrCopy(gToolMsg, "No DNS server is set (TCP/IP control panel).", 256);
+	else StrCopy(gToolMsg, "Lookup failed.", 256);
+	StrCat(gToolMsg, " (OT ");
+	if (r < 0) { StrCat(gToolMsg, "-"); u = (unsigned long) -r; } else u = (unsigned long) r;
+	UToStr(u, nb); StrCat(gToolMsg, nb); StrCat(gToolMsg, ")");
+}
+
 static void DnsAnswer(void)
 {
 	short i;
 	char ab[20];
 	gToolMsg[0] = 0;
-	if (gTSvcResult != noErr) { StrCopy(gToolMsg, "Lookup failed.", 256); gToolState = NC_TOOL_FAILED; return; }
+	if (gTSvcResult != noErr) { DnsFailMsg(gTSvcResult); gToolState = NC_TOOL_FAILED; return; }
 	if (ParseDotted(gToolHost, &gToolIP)) {				/* reverse: the name */
 		NCToolLine *l = NewLine();
 		l->ip = gToolIP;
@@ -1461,7 +1481,9 @@ short NC_ToolIdle(void)
 		gTSvcBusy = false;
 		if (gTool == TOOL_DNS) { DnsAnswer(); return gToolState; }
 		if (gTSvcResult != noErr || gTHostInfo.addrs[0] == 0) {
-			gToolState = NC_TOOL_FAILED; StrCopy(gToolMsg, "Cannot resolve that host.", 256); return gToolState;
+			gToolState = NC_TOOL_FAILED;
+			if (gTSvcResult != noErr) DnsFailMsg(gTSvcResult); else StrCopy(gToolMsg, "Cannot resolve that host.", 256);
+			return gToolState;
 		}
 		gToolIP = gTHostInfo.addrs[0];
 		gToolState = NC_TOOL_RUNNING;
