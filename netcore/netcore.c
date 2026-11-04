@@ -1254,6 +1254,17 @@ static Boolean OpenTSvc(void)
 	return true;
 }
 
+/* A lookup given up on (timed out, or its tool stopped): close the provider - that cancels the request still
+   pending in Open Transport - and open a fresh one on the next lookup. Only clearing gTSvcBusy would leave the
+   old request outstanding, and keeping it set made every later lookup fail with "DNS is not available." */
+static void AbandonTSvc(void)
+{
+	if (!gTSvcBusy) return;
+	gTSvcBusy = false;
+	gTSvcDone = false;
+	if (gTSvc) { OTCloseProvider(gTSvc); gTSvc = NULL; }
+}
+
 static void ClosePing(void)
 {
 	if (!gPingEp) return;
@@ -1273,7 +1284,7 @@ static void ToolBegin(short tool, const char *host)
 	if (ParseDotted(host, &gToolIP)) { gToolState = (tool == TOOL_DNS) ? NC_TOOL_RESOLVING : NC_TOOL_RUNNING; }
 	else gToolState = NC_TOOL_RESOLVING;
 	if (gToolState == NC_TOOL_RESOLVING) {
-		if (gTSvcBusy || !OpenTSvc()) { gToolState = NC_TOOL_FAILED; StrCopy(gToolMsg, "DNS is not available.", 256); return; }
+		if (!OpenTSvc()) { gToolState = NC_TOOL_FAILED; StrCopy(gToolMsg, "DNS is not available.", 256); return; }
 		OTMemzero(&gTHostInfo, sizeof(gTHostInfo));
 		gTSvcDone = false;
 		if (tool == TOOL_DNS && ParseDotted(host, &gToolIP)) {
@@ -1298,6 +1309,7 @@ void NC_ToolStop(void)
 {
 	gToolStop = true;
 	ClosePing();
+	AbandonTSvc();										/* a lookup still running is not wanted any more */
 	if (gRaw) { OTCloseProvider(gRaw); gRaw = NULL; }
 	if (gToolState == NC_TOOL_RESOLVING || gToolState == NC_TOOL_RUNNING) gToolState = NC_TOOL_DONE;
 }
@@ -1440,7 +1452,10 @@ short NC_ToolIdle(void)
 {
 	if (gToolState == NC_TOOL_RESOLVING) {
 		if (!gTSvcDone) {
-			if (TickCount() - gToolStart > 20 * TICKS_PER_SEC) { gToolState = NC_TOOL_FAILED; StrCopy(gToolMsg, "Lookup timed out.", 256); }
+			if (TickCount() - gToolStart > 20 * TICKS_PER_SEC) {
+				AbandonTSvc();
+				gToolState = NC_TOOL_FAILED; StrCopy(gToolMsg, "Lookup timed out.", 256);
+			}
 			return gToolState;
 		}
 		gTSvcBusy = false;
@@ -1507,7 +1522,7 @@ short NC_ToolIdle(void)
 				if (gTSvcDone) {
 					gTSvcBusy = false;
 					if (gTSvcResult == noErr && gNLines > 0) StrCopy(gLines[gNLines - 1].name, gTName, NC_NAMELEN);
-				}
+				} else AbandonTSvc();							/* the hop stays nameless; the next lookup starts fresh */
 				gStep = 0;
 				if (gToolCount == gToolSeq) gToolState = NC_TOOL_DONE;
 			}
