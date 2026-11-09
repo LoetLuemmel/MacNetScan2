@@ -43,6 +43,14 @@ probe/       the spikes: OTProbe (engine test bench) and SniffProbe (raw Etherne
 original/    MacNetScan 1 (MPW, one C file)
 ```
 
+## Demo
+
+![MacNetScan's Frames view walking through an AppleShare session](docs/macnetscan-frames-demo.gif)
+
+96 seconds, with captions ([MP4](docs/macnetscan-frames-demo.mp4)): Open pcap with `examples/afp_session.pcap`, the
+filters `zip`, `nbp`, `fplogin`, `fpread` and `-50`, and View > MacNetScan Help - recorded in the Basilisk II guest on
+the Odroid C2 from its framebuffer export (about 5 frames a second), captions added on the host.
+
 ## Help
 
 **View > MacNetScan Help** (Cmd-?) opens the help text (`mac/Help.txt`, Rez'd by `mac/Help.r` into TEXT 400) in a
