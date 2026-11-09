@@ -98,6 +98,15 @@ it joins, and whatever the host's network card receives. MacNetScan never asks
 the Ethernet driver for raw or promiscuous mode: under Basilisk II both
 requests hang the emulated Mac - and they would add nothing there.
 
+Open Transport hands on only what the Mac receives, never what it sends, so
+live in Frames the replies to this Mac's own requests stand alone. A capture
+with both directions - the "mini Wireshark" of the Help's example - needs
+Basilisk II on Linux: there the guest is bridged through a tun interface, and
+on the Linux host
+    sudo tcpdump -i tun0 -w session.pcap
+records the whole conversation; open that file with Open pcap. Basilisk II on
+macOS (the etherhelper backend) offers no such interface.
+
 
 Authorized use only
 -------------------
