@@ -27,6 +27,7 @@ int main(int argc, char **argv)
 {
 	unsigned char gh[24], rh[16], *buf;
 	int sw, verbose = 0, atonly = 0, i, rx = 0;
+	long total;
 	unsigned char self[6];
 	unsigned link, t0 = 0, cap = 0;
 	FILE *fp;
@@ -54,7 +55,8 @@ int main(int argc, char **argv)
 			l3len = orig - off;
 			if (type <= 1500) {								/* 802.3: the length, then LLC/SNAP */
 				if (incl < off + 8 || buf[off] != 0xaa || buf[off + 1] != 0xaa) continue;
-				l3len = type - 8; type = g16(buf + off + 6); off += 8;
+				type = g16(buf + off + 6); off += 8;
+				l3len = orig - off;							/* Ethernet's padding included, as Open Transport hands it on */
 			}
 		} else if (link == 113) {
 			if (incl < 16) continue;
@@ -75,7 +77,9 @@ int main(int argc, char **argv)
 		memcpy(f->data, l3, (size_t) f->caplen);
 		gN++;
 	}
-	for (i = 0; i < gN; i++) {
+	total = gN;
+	for (i = 0; i < total; i++) {
+		gN = i + 1;											/* the ring as it stood when frame i arrived */
 		char s[48], d[48], pr[16], in[96], lines[40][NC_DETAILLEN];
 		short nl, k;
 		NC_FrameSummary(&gF[i], s, d, pr, in);

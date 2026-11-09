@@ -332,11 +332,18 @@ static long AtpData(const NCFrame *f)
 	return l > 0 ? l : 0;
 }
 
+	/* the bytes of a DDP packet that are its own: Open Transport keeps Ethernet's padding after it */
+static long DdpBytes(const NCFrame *f)
+{
+	long l = (long) (Get16(f->data) & 0x3FF);
+	return l < f->caplen ? l : f->caplen;
+}
+
 	/* the summary of an ATP packet (DDP type 3) and what rides on it */
 static void AtpSummary(const NCFrame *f, char *proto, char *info)
 {
 	const UInt8 *p = f->data, *u = p + 17, *d = p + 21;
-	long dn = f->caplen - 21;
+	long dn = DdpBytes(f) - 21;
 	UInt8 fn = (UInt8) (p[13] >> 6);
 	const NCFrame *rq;
 	proto[0] = 0;
@@ -370,7 +377,7 @@ static void AtpSummary(const NCFrame *f, char *proto, char *info)
 		break;
 	case kAtpAsp: {
 		UInt8 af = rq->data[17];
-		long rn = rq->caplen - 21;
+		long rn = DdpBytes(rq) - 21;
 		UInt8 cmd = (UInt8) (rn >= 1 ? rq->data[21] : 0);
 		if ((af == 2 || af == 6) && rn >= 1) {
 			StrCat(proto, "AFP"); StrCat(info, "FP"); StrCat(info, AfpName(cmd));
@@ -560,7 +567,7 @@ static short DnsDetail(const UInt8 *m, long mn, UInt16 sp, UInt16 dp, char (*lin
 static short AppleTalkDetail(const NCFrame *f, char (*lines)[NC_DETAILLEN], short max, short nl)
 {
 	const UInt8 *p = f->data;
-	long n = f->caplen;
+	long n = DdpBytes(f);
 	char *s;
 	short i;
 	switch (p[12]) {
@@ -646,7 +653,7 @@ static short AppleTalkDetail(const NCFrame *f, char (*lines)[NC_DETAILLEN], shor
 			break;
 		case kAtpAsp: {
 			UInt8 af = rq->data[17];
-			long rn = rq->caplen - 21;
+			long rn = DdpBytes(rq) - 21;
 			H; StrCat(s, "ASP");
 			L; StrCat(s, "  "); StrCat(s, AspName(af)); StrCat(s, fn == 1 ? "" : " Reply"); StrCat(s, "  (SPFunction "); CatNum(s, af); StrCat(s, ")");
 			if (fn == 1) {
@@ -664,7 +671,20 @@ static short AppleTalkDetail(const NCFrame *f, char (*lines)[NC_DETAILLEN], shor
 				H; StrCat(s, "AFP");
 				L; StrCat(s, "  FP"); StrCat(s, AfpName(cmd)); StrCat(s, "  (command "); CatNum(s, cmd); StrCat(s, ")");
 				if (fn == 2) { L; StrCat(s, "  Result  "); CatAfpResult(s, Signed32(Get32(u))); StrCat(s, ", "); CatNum(s, AtpData(f)); StrCat(s, " bytes"); }
-				else if (rn >= 4 && (cmd == 17 || cmd == 26 || cmd == 4 || cmd == 27 || cmd == 33)) {
+				else if (cmd == 18 && rn >= 2) {					/* FPLogin: version, UAM, user - never the password */
+					const UInt8 *a = rq->data + 22;
+					long an = rn - 1;
+					L; StrCat(s, "  Version  "); CatPas(s, a, an, NC_DETAILLEN);
+					if (an > 1 + a[0]) {
+						an -= 1 + a[0]; a += 1 + a[0];
+						L; StrCat(s, "  UAM  "); CatPas(s, a, an, NC_DETAILLEN);
+						if (an > 1 + a[0]) { an -= 1 + a[0]; a += 1 + a[0]; L; StrCat(s, "  User  "); CatPas(s, a, an, NC_DETAILLEN); }
+					}
+				} else if (cmd == 24 && rn >= 5) { L; StrCat(s, "  Volume  "); CatPas(s, rq->data + 25, rn - 4, NC_DETAILLEN); }
+				else if (cmd == 27 && rn >= 12) {
+					L; StrCat(s, "  Fork "); CatNum(s, Get16(rq->data + 23)); StrCat(s, ", offset "); CatNum(s, Get32(rq->data + 25));
+					StrCat(s, ", "); CatNum(s, Get32(rq->data + 29)); StrCat(s, " bytes");
+				} else if (rn >= 4 && (cmd == 17 || cmd == 26 || cmd == 4 || cmd == 33)) {
 					L; StrCat(s, cmd == 17 || cmd == 26 ? "  Volume " : "  Fork "); CatNum(s, Get16(rq->data + 23));	/* after a pad or flag byte */
 				}
 			}
