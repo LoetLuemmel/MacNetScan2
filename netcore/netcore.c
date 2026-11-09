@@ -2066,6 +2066,20 @@ static unsigned long UnixNow(void)			/* the Mac clock is local time since 1904; 
 	if (delta & 0x00800000L) delta |= 0xFF000000L;
 	return secs - 2082844800UL - (unsigned long) delta;
 }
+void NC_FramesReset(unsigned long epoch)		/* a file replaces the capture (Listen stopped first) */
+{
+	gNFrames = 0;
+	gLsEpoch = epoch;
+}
+
+NCFrame *NC_FrameSlot(void)
+{
+	if (!gFrames) gFrames = (NCFrame *) NewPtr((long) NC_MAXFRAMES * sizeof(NCFrame));
+	return gFrames ? &gFrames[gNFrames % NC_MAXFRAMES] : NULL;
+}
+
+void NC_FrameCommit(void) { gNFrames++; }
+
 const NCFrame *NC_Frame(long i)
 {
 	if (!gFrames || i < 0 || i >= gNFrames || i < gNFrames - NC_MAXFRAMES) return NULL;

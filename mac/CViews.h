@@ -82,11 +82,13 @@ protected:
 	unsigned long	selIP;					// the selected address only ever seen as a destination
 };
 
-	// Frames: the capture as a packet list (scrolled, follows the newest), and below it the selected frame's protocol
-	// tree and bytes. A click selects a frame and holds the list still; a click on it again lets it follow again.
+	// Frames: a filter field over the capture as a packet list (scrolled, follows the newest), and below it the selected
+	// frame's protocol tree and bytes. A click selects a frame and holds the list still; a click on it again lets it
+	// follow again. With a filter the list holds the matching frames only (NC_FilterUpdate).
 #define kFrameRow		13
+#define kFrameBar		26				/* the filter field and its buttons */
 #define kFrameHeader	16
-#define kFrameListH		(12 * kFrameRow)
+#define kFrameListH		(10 * kFrameRow)
 class CFrameList : public CPanorama
 {
 public:
@@ -95,9 +97,10 @@ public:
 	virtual	void	Draw(Rect *area);
 	virtual	void	DoClick(Point hitPt, short modifierKeys, long when);
 	void			Update(void);			// new frames: grow, and follow the newest unless one is selected
-	void			Restart(void) { sel = -1; Update(); }	// a new capture began
+	void			Restart(void) { sel = -1; Update(); }	// a new capture began, or a new filter
 
 protected:
+	long			RowFrame(long aRow);	// the frame number in a row: the filter's match, or first + row
 	long			first, rows;			// frame number of row 0, rows in the list
 	long			sel;					// the selected frame number, -1: none, the list follows
 };
@@ -151,10 +154,15 @@ protected:
 class CHostField : public CEditText
 {
 public:
-	CHostField(CView *anEnclosure, CBureaucrat *aSupervisor, short aWidth, short aHeight, short aHEncl, short aVEncl);
+	CHostField(CView *anEnclosure, CBureaucrat *aSupervisor, short aWidth, short aHeight, short aHEncl, short aVEncl,
+			   long aReturnCmd);
 
 	virtual	void	DoKeyDown(char theChar, Byte keyCode, EventRecord *macEvent);
 	void			GetHost(char *out, short max);	// the field as a C string, blanks trimmed
+	void			GetText(char *out, short max);	// the field as a C string, as typed
+
+protected:
+	long			returnCmd;						// what Return or Enter sends: Ping, or Filter
 };
 
 	// The About box (DLOG 300, logo PICT 300 with MacNetScan 1's radar sweep) and the Scan Options
