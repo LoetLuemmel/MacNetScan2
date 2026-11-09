@@ -903,6 +903,11 @@ CFrameList::CFrameList(CView *anEnclosure, CBureaucrat *aSupervisor, short aWidt
 	Update();
 }
 
+long CFrameList::RowFrame(long aRow)
+{
+	return NC_FilterOn() ? NC_FilterFrame(aRow) : first + aRow;
+}
+
 void CFrameList::Update()
 {
 	LongRect b;
@@ -912,6 +917,7 @@ void CFrameList::Update()
 	if (sel >= 0) return;										/* a selection holds the list still */
 	rows = total < NC_MAXFRAMES ? total : NC_MAXFRAMES;
 	first = total - rows;
+	if (NC_FilterOn()) rows = NC_FilterUpdate();				/* the matches only; RowFrame maps a row	*/
 	GetLengths(&w, &h);
 	vis = h / kFrameRow;										/* follow the newest */
 	pos.h = 0; pos.v = rows > vis ? rows - vis : 0;
@@ -947,16 +953,17 @@ void CFrameList::Draw(Rect *area)
 		}
 	}
 	for (i = 0; i < rows; i++) {
-		const NCFrame *f = NC_Frame(first + i);
+		long no = RowFrame(i);
+		const NCFrame *f = NC_Frame(no);
 		lr.top = i * kFrameRow; lr.bottom = lr.top + kFrameRow;
 		lr.left = 0; lr.right = w;
 		FrameToQDR(&lr, &r);
 		if (!SectRect(&r, area, &cut)) continue;
-		if (first + i == sel) { RGBForeColor(&kSelRow); PaintRect(&r); }
+		if (no == sel) { RGBForeColor(&kSelRow); PaintRect(&r); }
 		GridRow(&r, r.left, kFcCols, 6);
 		y = (short) (r.top + 10);
 		RGBForeColor(&kInkSoft);
-		s[0] = '\0'; CCatNum(s, first + i + 1);
+		s[0] = '\0'; CCatNum(s, no + 1);
 		MoveTo((short) (r.left + kFcNo), y); DrawC(s);
 		if (f == NULL) { MoveTo((short) (r.left + kFcTime), y); DrawC("(overwritten)"); continue; }
 		NC_FrameSummary(f, src, dst, proto, info);
@@ -982,7 +989,7 @@ void CFrameList::DoClick(Point hitPt, short modifierKeys, long when)
 {
 	long row = hitPt.v / kFrameRow;
 	if (row < 0 || row >= rows) return;
-	sel = (first + row == sel) ? -1 : first + row;				/* the selected one again: follow again */
+	sel = (RowFrame(row) == sel) ? -1 : RowFrame(row);			/* the selected one again: follow again */
 	if (itsSupervisor != NULL) ((CMain *) itsSupervisor)->FrameSelected(sel);
 	if (sel < 0) Update(); else Refresh();
 }
@@ -1018,7 +1025,13 @@ void CFramesPane::Draw(Rect *area)
 	FrameToQDR(&frame, &r);
 	RGBForeColor(&kViewBg);
 	PaintRect(&r);
-	y = (short) (r.top + 12);									/* the list's column titles */
+	{															/* the filter field's frame, as the host field's */
+		Rect fb;
+		SetRect(&fb, (short) (r.left + 12), (short) (r.top + 1), (short) (r.left + 274), (short) (r.top + 27));
+		RGBForeColor(&kBox); PaintRoundRect(&fb, 8, 8);
+		RGBForeColor(&kStatusLn); FrameRoundRect(&fb, 8, 8);
+	}
+	y = (short) (r.top + kFrameBar + 12);						/* the list's column titles, under the filter */
 	SectionTitle((short) (r.left + kFcNo), y, "No.");
 	SectionTitle((short) (r.left + kFcTime), y, "Time");
 	SectionTitle((short) (r.left + kFcSrc), y, "Source");
@@ -1027,7 +1040,7 @@ void CFramesPane::Draw(Rect *area)
 	SectionTitle((short) (r.left + kFcLen), y, "Length");
 	SectionTitle((short) (r.left + kFcInfo), y, "Info");
 
-	top = (short) (r.top + kFrameHeader + kFrameListH + 6);		/* below the list */
+	top = (short) (r.top + kFrameBar + kFrameHeader + kFrameListH + 6);	/* below the list */
 	RGBForeColor(&kStatusLn);
 	MoveTo((short) (r.left + 8), top); LineTo((short) (r.right - 8), top);
 	TextFont(kGeneva); TextSize(9); TextFace(normal);
@@ -1041,6 +1054,8 @@ void CFramesPane::Draw(Rect *area)
 			else DrawC(NC_FrameTotal() > 0 ? s : "Press Scan to capture. Frames are what Listen hears; nothing is sent.");
 			MoveTo((short) (r.left + 14), (short) (top + 34));
 			DrawC("Click a frame for its protocol tree and bytes; click it again to follow the capture live.");
+			MoveTo((short) (r.left + 14), (short) (top + 48));
+			DrawC("Filter: words that must all appear, any case (afp 3.138); !word must not. Open pcap reads a capture.");
 		}
 		RGBForeColor(&kBlackC);
 		return;
@@ -1253,9 +1268,10 @@ void CLightButton::DoClick(Point hitPt, short modifierKeys, long when)
  ******************************************************************************/
 
 CHostField::CHostField(CView *anEnclosure, CBureaucrat *aSupervisor, short aWidth, short aHeight,
-					   short aHEncl, short aVEncl)
+					   short aHEncl, short aVEncl, long aReturnCmd)
 	: CEditText(anEnclosure, aSupervisor, aWidth, aHeight, aHEncl, aVEncl, sizFIXEDLEFT, sizFIXEDTOP, -1, FALSE)
 {
+	returnCmd = aReturnCmd;
 	SetFontNumber(kGeneva);
 	SetFontSize(12);
 	CalcTERects();						/* TE's viewRect still has the port font's 12 px line: clips the selection */
@@ -1264,8 +1280,8 @@ CHostField::CHostField(CView *anEnclosure, CBureaucrat *aSupervisor, short aWidt
 
 void CHostField::DoKeyDown(char theChar, Byte keyCode, EventRecord *macEvent)
 {
-	if (theChar == 0x0D || theChar == 0x03) {				/* Return or Enter: ping */
-		if (itsSupervisor != NULL) itsSupervisor->DoCommand(cmdToolPing);
+	if (theChar == 0x0D || theChar == 0x03) {				/* Return or Enter: ping, or filter */
+		if (itsSupervisor != NULL) itsSupervisor->DoCommand(returnCmd);
 		return;
 	}
 	CEditText::DoKeyDown(theChar, keyCode, macEvent);
@@ -1280,6 +1296,14 @@ void CHostField::GetHost(char *out, short max)
 		if (c != ' ' && c != '\t' && c != 0x0D) out[o++] = c;
 	}
 	out[o] = '\0';
+}
+
+void CHostField::GetText(char *out, short max)
+{
+	Handle h = GetTextHandle();
+	long n = (h != NULL) ? GetHandleSize(h) : 0, i;
+	for (i = 0; i < n && i < max - 1; i++) out[i] = (char) ((*h)[i] == 0x0D ? ' ' : (*h)[i]);
+	out[i] = '\0';
 }
 
 /******************************************************************************

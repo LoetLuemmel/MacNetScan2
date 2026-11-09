@@ -935,3 +935,173 @@ long NC_FrameText(const NCFrame *f, long no, char *buf, long max)
 	}
 	return o;
 }
+
+/* ------------------------------------------------------------------ a pcap file as the capture */
+
+static UInt32 PcapGet32(const UInt8 *b, short swapped)
+{
+	return swapped ? ((UInt32) b[3] << 24) | ((UInt32) b[2] << 16) | ((UInt32) b[1] << 8) | b[0] : Get32(b);
+}
+
+	/* one record as Open Transport would have handed the frame on: the EtherType (for 802.3 the SNAP protocol)
+	   and the bytes from the layer-3 header on, Ethernet's padding included. rec is the 16-byte record header,
+	   b its first n bytes. Link types 1 (Ethernet, 802.1Q, 802.3/SNAP) and 113 (Linux cooked, our own export). */
+short NC_PcapToFrame(const unsigned char *rec, const unsigned char *b, long n, unsigned long link, short swapped,
+					 unsigned long epoch, NCFrame *f)
+{
+	UInt32 secs = PcapGet32(rec, swapped), frac = PcapGet32(rec + 4, swapped), orig = PcapGet32(rec + 12, swapped);
+	UInt16 type;
+	long off, i;
+	const UInt8 *src;
+	if (link == 1) {
+		if (n < 14) return 0;
+		src = b + 6; off = 12; type = Get16(b + 12);
+		if (type == 0x8100 && n >= 18) { off += 4; type = Get16(b + 16); }
+		off += 2;
+		if (type <= 1500) {										/* 802.3: LLC/SNAP, else nothing OT hands on */
+			if (n < off + 8 || b[off] != 0xAA || b[off + 1] != 0xAA) return 0;
+			type = Get16(b + off + 6); off += 8;
+		}
+	} else if (link == 113) {
+		if (n < 16) return 0;
+		src = b + 6; type = Get16(b + 14); off = 16;
+	} else return 0;
+	if ((long) orig < off) return 0;
+	f->us = (secs >= epoch ? (secs - epoch) : 0) * 1000000UL + (frac % 1000000UL);
+	for (i = 0; i < 6; i++) f->src[i] = src[i];
+	f->type = type;
+	f->len = (short) ((long) orig - off > 32767 ? 32767 : (long) orig - off);
+	f->caplen = (short) (n - off > NC_SNAPLEN ? NC_SNAPLEN : n - off);
+	if (f->caplen > f->len) f->caplen = f->len;
+	for (i = 0; i < f->caplen; i++) f->data[i] = b[off + i];
+	return 1;
+}
+
+#ifndef NC_HOST_TEST
+#include <Memory.h>
+#include <Files.h>
+#include <StandardFile.h>
+
+#define kPcapBuf	1600										/* a frame's first bytes; the rest is skipped */
+
+long NC_PcapOpen(char *name)
+{
+	StandardFileReply reply;
+	UInt8 gh[24], rh[16], *buf;
+	UInt32 magic, link, incl, epoch = 0;
+	short ref, swapped, i;
+	long n, take, count = 0;
+	OSErr err;
+
+	StandardGetFile(NULL, -1, NULL, &reply);
+	if (!reply.sfGood) return -1;
+	for (i = 0; i < reply.sfFile.name[0] && i < 63; i++) name[i] = (char) reply.sfFile.name[1 + i];
+	name[i] = 0;
+	if (FSpOpenDF(&reply.sfFile, fsRdPerm, &ref) != noErr) return -2;
+	n = 24;
+	err = FSRead(ref, &n, gh);
+	magic = Get32(gh);
+	swapped = (short) (magic == 0xD4C3B2A1UL || magic == 0x4D3CB2A1UL);
+	if (err != noErr || n != 24 || (!swapped && magic != 0xA1B2C3D4UL && magic != 0xA1B23C4DUL)) { FSClose(ref); return -3; }
+	link = PcapGet32(gh + 20, swapped);
+	buf = (UInt8 *) NewPtr(kPcapBuf);
+	if (buf == NULL) { FSClose(ref); return -4; }
+	for (;;) {
+		NCFrame *f;
+		n = 16;
+		if (FSRead(ref, &n, rh) != noErr || n != 16) break;
+		incl = PcapGet32(rh + 8, swapped);
+		if (magic == 0xA1B23C4DUL || magic == 0x4D3CB2A1UL) {	/* nanosecond stamps: as microseconds */
+			UInt32 us = PcapGet32(rh + 4, swapped) / 1000UL;
+			rh[4] = (UInt8) (swapped ? us : us >> 24); rh[5] = (UInt8) (swapped ? us >> 8 : us >> 16);
+			rh[6] = (UInt8) (swapped ? us >> 16 : us >> 8); rh[7] = (UInt8) (swapped ? us >> 24 : us);
+		}
+		take = incl > kPcapBuf ? kPcapBuf : (long) incl;
+		n = take;
+		if (FSRead(ref, &n, buf) != noErr || n != take) break;
+		if ((long) incl > take && SetFPos(ref, fsFromMark, (long) incl - take) != noErr) break;
+		if (count == 0) { epoch = PcapGet32(rh, swapped); NC_FramesReset(epoch); }
+		f = NC_FrameSlot();
+		if (f == NULL) break;
+		if (NC_PcapToFrame(rh, buf, take, link, swapped, epoch, f)) NC_FrameCommit();
+		count++;
+	}
+	DisposePtr((Ptr) buf);
+	FSClose(ref);
+	if (count == 0) NC_FramesReset(0);
+	NC_FilterSet(NULL);										/* the old matches are void; the text stays */
+	return count;
+}
+#endif
+
+/* ------------------------------------------------------------------ the filter */
+
+static char gFilter[64];
+static long gFilt[NC_MAXFRAMES];							/* the matching frame numbers, oldest first */
+static long gFiltN = 0, gFiltNext = 0;
+
+static char Lower(char c) { return (char) (c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c); }
+
+static short Contains(const char *hay, const char *word, short wn)	/* any case */
+{
+	short i, j;
+	for (i = 0; hay[i]; i++) {
+		for (j = 0; j < wn && hay[i + j] && Lower(hay[i + j]) == Lower(word[j]); j++) ;
+		if (j == wn) return 1;
+	}
+	return 0;
+}
+
+	/* text NULL: keep the words, check all frames again (a new capture) */
+void NC_FilterSet(const char *text)
+{
+	short i;
+	if (text != NULL) { for (i = 0; text[i] && i < 63; i++) gFilter[i] = text[i]; gFilter[i] = 0; }
+	gFiltN = 0;
+	gFiltNext = 0;
+}
+
+short NC_FilterOn(void)
+{
+	short i;
+	for (i = 0; gFilter[i]; i++) if (gFilter[i] != ' ') return 1;
+	return 0;
+}
+
+static short FilterMatch(const NCFrame *f)
+{
+	char src[48], dst[48], proto[16], info[96];
+	short i = 0, wn, neg, hit;
+	NC_FrameSummary(f, src, dst, proto, info);
+	while (gFilter[i]) {
+		while (gFilter[i] == ' ') i++;
+		if (!gFilter[i]) break;
+		neg = (short) (gFilter[i] == '!');
+		if (neg) i++;
+		for (wn = 0; gFilter[i + wn] && gFilter[i + wn] != ' '; wn++) ;
+		if (wn > 0) {
+			hit = (short) (Contains(src, gFilter + i, wn) || Contains(dst, gFilter + i, wn) ||
+						   Contains(proto, gFilter + i, wn) || Contains(info, gFilter + i, wn));
+			if (hit == neg) return 0;
+		}
+		i = (short) (i + wn);
+	}
+	return 1;
+}
+
+long NC_FilterUpdate(void)
+{
+	long total = NC_FrameTotal(), lo = total > NC_MAXFRAMES ? total - NC_MAXFRAMES : 0, i, k;
+	if (total < gFiltNext) { gFiltN = 0; gFiltNext = 0; }	/* a new capture began */
+	for (k = 0; k < gFiltN && gFilt[k] < lo; k++) ;			/* drop what the ring overwrote */
+	if (k > 0) { for (i = k; i < gFiltN; i++) gFilt[i - k] = gFilt[i]; gFiltN -= k; }
+	if (gFiltNext < lo) gFiltNext = lo;
+	for (i = gFiltNext; i < total; i++) {
+		const NCFrame *f = NC_Frame(i);
+		if (f != NULL && FilterMatch(f) && gFiltN < NC_MAXFRAMES) gFilt[gFiltN++] = i;
+	}
+	gFiltNext = total;
+	return gFiltN;
+}
+
+long NC_FilterFrame(long row) { return row >= 0 && row < gFiltN ? gFilt[row] : -1; }

@@ -240,6 +240,20 @@ unsigned long NC_FrameEpoch(void);				/* when the capture began, Unix seconds (U
 long		NC_PcapHeader(unsigned char *b);		/* the file header: 24 bytes */
 long		NC_PcapRecord(const NCFrame *f, unsigned char *b);	/* one frame, at most NC_PCAPREC bytes */
 long		NC_FrameText(const NCFrame *f, long no, char *buf, long max);	/* list line, tree, bytes: for Copy */
+	/* a capture from a file instead of Listen (netcore.c holds the ring, frames.c reads the file) */
+void		NC_FramesReset(unsigned long epoch);	/* empty the ring; frame times count from epoch (Unix seconds) */
+NCFrame		*NC_FrameSlot(void);					/* the next frame to fill, NULL without memory ... */
+void		NC_FrameCommit(void);					/* ... and keep it */
+short		NC_PcapToFrame(const unsigned char *rec, const unsigned char *b, long n, unsigned long link, short swapped,
+						   unsigned long epoch, NCFrame *f);	/* a pcap record header and its first n bytes: 1 if kept */
+long		NC_PcapOpen(char *name);				/* asks for a pcap file and loads it: frames read, -1 cancelled,
+													   < -1 an error; name gets the file's name (64) */
+	/* the Frames view's filter: words that must all appear in a frame's source, destination, protocol or info
+	   (any case); "!word" must not. "" shows every frame. */
+void		NC_FilterSet(const char *text);
+short		NC_FilterOn(void);
+long		NC_FilterUpdate(void);					/* matches among the frames kept, new frames checked once */
+long		NC_FilterFrame(long row);				/* the frame number of a row of the filtered list */
 void		NC_MACToStr(const unsigned char *mac, char *out);	/* "00:0c:6c:0b:0e:ad" */
 #define NC_MAXEVENTS	64
 

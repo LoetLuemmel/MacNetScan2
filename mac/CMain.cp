@@ -725,7 +725,8 @@ void CMain::ICMain()
 	atScroll = NULL;
 	listenPane = NULL;
 	toolsPane = NULL;
-	hostField = NULL;
+	hostField = filterField = NULL;
+	capName[0] = '\0';
 	pingBtn = dnsBtn = traceBtn = NULL;
 	toolMode = 0;
 	lastToolSig = -1;
@@ -793,15 +794,21 @@ void CMain::MakeNewWindow()
 		mapPane->Hide();
 		framesPane = new CFramesPane(itsWindow, this, kWinWidth, h, 0, kStripHeight);	/* titles, tree, bytes */
 		framesPane->Hide();
-		frameScroll = new CScrollPane(itsWindow, this, kWinWidth, kFrameListH, 0, kStripHeight + kFrameHeader,
+		frameScroll = new CScrollPane(itsWindow, this, kWinWidth, kFrameListH, 0, kStripHeight + kFrameBar + kFrameHeader,
 									  sizFIXEDLEFT, sizFIXEDTOP, FALSE, TRUE, FALSE);	/* the list, over it */
 		frameList = new CFrameList(frameScroll, this, kWinWidth - 15, kFrameListH);
 		frameScroll->InstallPanorama(frameList);
 		frameScroll->Hide();
 		toolsPane = new CToolsPane(itsWindow, this, kWinWidth, h, 0, kStripHeight);	/* under field and buttons */
 		toolsPane->Hide();
-		hostField = new CHostField(itsWindow, this, 250, 18, 18, kStripHeight + 14);
+		hostField = new CHostField(itsWindow, this, 250, 18, 18, kStripHeight + 14, cmdToolPing);
 		hostField->Hide();
+		filterField = new CHostField(itsWindow, this, 250, 18, 18, kStripHeight + 5, cmdFrameFilter);
+		filterField->Hide();
+		filterBtn = new CLightButton(itsWindow, this, 64, 290, kStripHeight + 3, "Filter", cmdFrameFilter);
+		filterBtn->Hide();
+		openBtn = new CLightButton(itsWindow, this, 88, 362, kStripHeight + 3, "Open pcap", cmdFrameOpen);
+		openBtn->Hide();
 		pingBtn = new CLightButton(itsWindow, this, 64, 290, kStripHeight + 12, "Ping", cmdToolPing);
 		pingBtn->Hide();
 		dnsBtn = new CLightButton(itsWindow, this, 64, 362, kStripHeight + 12, "DNS", cmdToolDns);
@@ -961,6 +968,23 @@ void CMain::HostSelected(unsigned long anIP)
 	detail->SetHost(anIP);
 }
 
+void CMain::FramesCommand(long aCommand)					// Filter: the field's words; Open pcap: a file's frames
+{
+	char t[64];
+	long n;
+	if (aCommand == cmdFrameFilter) { filterField->GetText(t, sizeof(t)); NC_FilterSet(t); }
+	else {
+		if (NC_Listening()) StopScan();
+		n = NC_PcapOpen(t);
+		if (n == -1) return;
+		if (n < -1) { SysBeep(1); return; }
+		for (n = 0; t[n] && n < 63; n++) capName[n] = t[n];
+		capName[n] = '\0';
+	}
+	frameList->Restart();
+	FrameSelected(-1);
+}
+
 void CMain::FrameSelected(long aFrame)
 {
 	gSelFrame = aFrame;
@@ -985,6 +1009,7 @@ void CMain::StartScan()
 	if (!netOK || stage != 0 || NC_Listening()) return;
 	if (view == kViewListen || view == kViewMap || view == kViewFrames) {	/* start hearing: a new capture */
 		if (NC_ListenStart() != 0) SysBeep(1);
+		capName[0] = '\0';
 		frameList->Restart();
 		framesPane->SetFrame(-1);
 		gSelFrame = -1;
@@ -1063,11 +1088,13 @@ void CMain::ShowStatus()
 	else if (view == kViewAT) CCat(s, "Ready - Scan looks up the AppleTalk devices, zone by zone.");
 	else if (view == kViewListen) CCat(s, "Ready - Scan listens to the network; nothing is sent.");
 	else if (view == kViewMap) CCat(s, "Ready - Scan listens and draws who sends to whom.");
+	else if (view == kViewFrames && capName[0]) { CCat(s, capName); CCat(s, "  "); CCatNum(s, NC_FrameTotal()); CCat(s, " frames"); }
 	else if (view == kViewFrames) CCat(s, "Ready - Scan captures what reaches this Mac; nothing is sent.");
 	else if (view == kViewTools) CCat(s, "Ready.");
 	else if (n > 0) CCat(s, "Ready.");
 	else CCat(s, "Ready - press Scan to sweep the local network.");
 
+	if (view == kViewFrames && NC_FilterOn()) { CCat(s, "  filter: "); CCatNum(s, NC_FilterUpdate()); CCat(s, " shown"); }
 	c[0] = '\0';
 	CCatNum(c, n); CCat(c, n == 1 ? " host  \xA5  " : " hosts  \xA5  ");
 	CCatNum(c, services); CCat(c, services == 1 ? " service  \xA5  " : " services  \xA5  ");
@@ -1105,20 +1132,25 @@ void CMain::SetView(short aView)
 	listHeader->Hide(); listScroll->Hide(); detail->Hide();
 	atScroll->Hide(); listenPane->Hide(); mapPane->Hide(); framesPane->Hide(); frameScroll->Hide();
 	toolsPane->Hide(); hostField->Hide(); pingBtn->Hide(); dnsBtn->Hide(); traceBtn->Hide();
+	filterField->Hide(); filterBtn->Hide(); openBtn->Hide();
 	if (aView == kViewIP) {
 		listHeader->Show(); listScroll->Show(); detail->Show();
 		hostList->Update();
 	} else if (aView == kViewAT) atScroll->Show();
 	else if (aView == kViewListen) listenPane->Show();
 	else if (aView == kViewMap) mapPane->Show();
-	else if (aView == kViewFrames) { framesPane->Show(); frameScroll->Show(); frameList->Update(); }
+	else if (aView == kViewFrames) {
+		framesPane->Show(); frameScroll->Show(); filterField->Show(); filterBtn->Show(); openBtn->Show();
+		frameList->Update();
+	}
 	else {
 		toolsPane->Show(); hostField->Show(); pingBtn->Show(); dnsBtn->Show(); traceBtn->Show();
 	}
-	if (aView == kViewTools) {							/* typing goes to the host field */
-		itsGopher = hostField;
-		hostField->BecomeGopher(TRUE);
-		hostField->SelectAll(TRUE);
+	if (aView == kViewTools || aView == kViewFrames) {	/* typing goes to the host or the filter field */
+		CHostField *fld = aView == kViewTools ? hostField : filterField;
+		itsGopher = fld;
+		fld->BecomeGopher(TRUE);
+		fld->SelectAll(TRUE);
 	} else {
 		itsGopher = this;
 		BecomeGopher(TRUE);
@@ -1236,6 +1268,8 @@ void CMain::DoCommand(long theCommand)
 		case cmdToolPing:	StartTool(1); break;
 		case cmdToolDns:	StartTool(2); break;
 		case cmdToolTrace:	StartTool(3); break;
+		case cmdFrameFilter:
+		case cmdFrameOpen:	FramesCommand(theCommand); break;
 		default:			x_CMain::DoCommand(theCommand); break;
 	}
 }

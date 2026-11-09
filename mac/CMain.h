@@ -40,6 +40,8 @@ class CMain;
 #define cmdToolPing		620L	/* Tools view buttons				*/
 #define cmdToolDns		621L
 #define cmdToolTrace	622L
+#define cmdFrameFilter	630L	/* Frames view: the filter field (Return) and its button */
+#define cmdFrameOpen	631L	/*              Open pcap				*/
 
 enum { kViewIP = 0, kViewAT, kViewListen, kViewTools, kViewMap, kViewFrames, kViewCount };
 
@@ -209,6 +211,7 @@ public:
 	void	Pump(long *maxSleep);			// the chore: one slice of engine work
 	void	HostSelected(unsigned long anIP);	// CHostList: a row was clicked
 	void	FrameSelected(long aFrame);			// CFrameList: a frame was clicked, -1 none
+	void	FramesCommand(long aCommand);		// Frames view: Filter, Open pcap
 	short	CurrentView(void) { return view; }
 
 protected:
@@ -240,8 +243,9 @@ protected:
 	CScrollPane	*frameScroll;
 	CFrameList	*frameList;
 	CToolsPane	*toolsPane;
-	CHostField	*hostField;
-	CLightButton *pingBtn, *dnsBtn, *traceBtn;
+	CHostField	*hostField, *filterField;
+	CLightButton *pingBtn, *dnsBtn, *traceBtn, *filterBtn, *openBtn;
+	char		capName[64];					// the pcap file the frames came from, "" for Listen
 	CListHeader	*listHeader;	// the IP view: header, table, detail panel
 	CScrollPane	*listScroll;
 	CHostList	*hostList;
