@@ -1,5 +1,5 @@
-MacNetScan 2
-============
+MacNetScan 2.1
+==============
 
 A network scanner for System 7 on the classic Macintosh. MacNetScan sweeps the
 local network over Open Transport and shows every device it finds - address,
@@ -38,8 +38,13 @@ Map          Who sends to whom, from what Listen hears: the busiest stations
              around an oval, the groups they send to (broadcast, mDNS, IPv6
              multicast, LLDP, AppleTalk) inside it. Click a node for its box.
 Frames       The capture behind Listen as a packet list, the selected frame's
-             protocol tree and its bytes in hex - the last 400 frames. Export
-             writes them as a pcap file for Wireshark.
+             protocol tree and its bytes in hex - the last 500 frames. It takes
+             AppleTalk apart up to AppleShare: NBP, ZIP, RTMP, AEP and ATP with
+             ASP and AFP, each reply matched to its request ("FPRead Reply ok"
+             and how long the server took). Open pcap reads a capture file
+             (tcpdump, Wireshark or our own), the filter field keeps the frames
+             that contain all its words ("!word" leaves them out). Export
+             writes the frames as a pcap file for Wireshark.
 
 Scan starts what the current view does (the sweep, the NBP lookup, listening);
 Stop ends it. Export saves what the view shows as tab-delimited text (in Frames
@@ -51,6 +56,15 @@ The grid button beside Copy, or View > Grid Lines (Command-G), switches the
 dotted grid. A click on the radar scope opens the About box.
 
 
+Help and the example capture
+----------------------------
+View > MacNetScan Help (Command-?) explains the views, the Frames view, Open
+pcap and the filter. It ends with a step-by-step walk through the file
+"AFP session.pcap" in this folder: a Mac opens an AppleShare server, logs in,
+reads a file and disconnects - 477 frames, both directions. Open it in Frames
+with Open pcap and follow the Help.
+
+
 Demo mode
 ---------
 View > Demo Mode (Command-D) is for screenshots and videos you want to put
@@ -59,6 +73,14 @@ neutral ones, MAC addresses and IPv6 interface IDs invented (but the same
 device keeps its made-up name everywhere), and the hex dump in Frames is
 hidden. It changes only what is drawn - Export, Copy and the pcap file stay
 real.
+
+
+What's new in 2.1
+-----------------
+- Frames: ATP, ASP and AFP (FPLogin with AFP version, login method and user -
+  never the password; FPOpenVol, FPRead), ZIP, RTMP and AEP in the tree.
+- Frames: Open pcap and a filter; 500 frames instead of 400.
+- View > MacNetScan Help, with an example capture of an AppleShare session.
 
 
 Requirements

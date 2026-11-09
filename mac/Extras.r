@@ -9,7 +9,7 @@ resource 'DITL' (300) {
 	{
 		{198, 316, 218, 386}, Button { enabled, "OK" },
 		{16, 124, 190, 392},  StaticText { disabled,
-			"MacNetScan 2.0\n"
+			"MacNetScan 2.1\n"
 			"A network scanner for System 7: IP hosts and services, "
 			"AppleTalk devices, a passive listener, ping, DNS and traceroute.\n\n"
 			"Made by Pit F\0x9Arster with Claude Code, through AppleBridge.\n"

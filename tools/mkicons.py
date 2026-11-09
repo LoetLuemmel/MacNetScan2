@@ -91,12 +91,12 @@ r = ["/* Icons.r - MacNetScan 2's Finder bundle, icons and version; written by t
      "   assets/LAN-Scan-Icon-512.png, do not edit by hand. Rez -a Icons.r -o \"Project Resources.rsrc\";",
      "   after Build Application: SetFile -a B MacNetScan (the Finder reads the BNDL then). */", "",
      '#include "Types.r"', "",
-     "data 'IPSc' (0, \"Owner resource\") {", '\t$"0E" "MacNetScan 2.0"', "};", "",
+     "data 'IPSc' (0, \"Owner resource\") {", '\t$"0E" "MacNetScan 2.1"', "};", "",
      "resource 'BNDL' (128) {", "\t'IPSc', 0,", "\t{", "\t\t'ICN#', { 0, 128 },", "\t\t'FREF', { 0, 128 }", "\t}", "};", "",
      "resource 'FREF' (128) { 'APPL', 0, \"\" };", "",
-     "resource 'vers' (1) {", "\t0x02, 0x00, release, 0x00, verUS, \"2.0\",",
-     "\t\"2.0, \\0xA9 2026 Pit F\\0x9Arster - MIT License\"", "};", "",
-     "resource 'vers' (2) {", "\t0x02, 0x00, release, 0x00, verUS, \"2.0\", \"MacNetScan 2\"", "};", ""]
+     "resource 'vers' (1) {", "\t0x02, 0x10, release, 0x00, verUS, \"2.1\",",
+     "\t\"2.1, \\0xA9 2026 Pit F\\0x9Arster - MIT License\"", "};", "",
+     "resource 'vers' (2) {", "\t0x02, 0x10, release, 0x00, verUS, \"2.1\", \"MacNetScan 2\"", "};", ""]
 for typ, data in parts:
     r.append(f"data '{typ}' (128, \"MacNetScan\") {{\n{hexdata(data)}\n}};\n")
 open(out, "w").write("\n".join(r))
