@@ -15,7 +15,7 @@ System 7.6.1 guest in Basilisk II through [AppleBridge](https://github.com/LoetL
 | **Listen** | Passive - sends nothing but six multicast joins. ARP, IP broadcasts/multicasts (mDNS), DHCP, NetBIOS, IPv6, LLDP, AppleTalk and AARP that reach this Mac: protocol meters, a station table (MAC, IP, AppleTalk address or LLDP system name), an event log (new stations, gratuitous ARP, DHCP, IP conflicts, LLDP neighbours). |
 | **Tools** | Ping (TCP connect), DNS lookup (both directions), traceroute (ICMP). |
 | **Map** | Who sends to whom, from what Listen hears: the 20 busiest stations around an oval in address order, the groups they send to (broadcast, mDNS, IPv6 multicast, LLDP, AppleTalk) on an inner ring, unicast as chords; destinations never heard sending are hollow. Colour by target, width by packets (1/10/100/1000); redrawn every 2 s through a GWorld, so it does not flicker. |
-| **Frames** | The capture behind Listen as a packet list - number, time, source, destination, protocol (coloured), length, a one-line summary - and below it the selected frame's protocol tree (link, ARP/AARP, IPv4/IPv6, TCP/UDP/ICMP/ICMPv6, DNS/mDNS/LLMNR, DHCP, LLDP, DDP/NBP; NetBIOS and ATP in the summary line) and its bytes in hex. The last 400 frames, 384 bytes of each. The list follows the newest frame; a click on a frame holds it still, a second click lets it follow again. Open Transport hands frames over without their MAC header, so the link layer shows the sender and the type only. **Export** writes the frames kept as a pcap file for Wireshark, link type 113 (Linux cooked capture), which needs no MAC header - just the sender and EtherType Open Transport hands on; timestamps in UTC (set the guest's Map control panel, or they are off by its time zone). |
+| **Frames** | The capture behind Listen as a packet list - number, time, source, destination, protocol (coloured), length, a one-line summary - and below it the selected frame's protocol tree (link, ARP/AARP, IPv4/IPv6, TCP/UDP/ICMP/ICMPv6, DNS/mDNS/LLMNR, DHCP, LLDP, DDP with NBP, RTMP, AEP and ZIP, ATP with ASP and AFP on it; NetBIOS in the summary line). An ATP response is matched to its request by TID and addresses, so an AFP reply is named by its command (FPGetVolParms) and its result (ok, ObjectNotFound); Open Transport hands on only what this Mac receives, so the replies to its own requests stand alone - a reply from ZIP's socket still lists its zones, any other one shows its user bytes read as an ASP result and its bytes in hex. The last 400 frames, 384 bytes of each. The list follows the newest frame; a click on a frame holds it still, a second click lets it follow again. Open Transport hands frames over without their MAC header, so the link layer shows the sender and the type only. **Export** writes the frames kept as a pcap file for Wireshark, link type 113 (Linux cooked capture), which needs no MAC header - just the sender and EtherType Open Transport hands on; timestamps in UTC (set the guest's Map control panel, or they are off by its time zone). |
 
 Plus: **Export / Copy** of what the view shows, tab-delimited - the IP sweep (IP Network, Tools), the NBP entities (AppleTalk), counters, stations and events (Listen, Map), in Frames a pcap file and the selected frame as text, **Scan › Options** (range, timeout, probes at once, ports; kept in
 `MacNetScan Prefs`), an About box with MacNetScan 1's radar sweep, a Finder icon. The look is a 1995 one: a platinum tool bar of bevelled
@@ -43,6 +43,14 @@ probe/       the spikes: OTProbe (engine test bench) and SniffProbe (raw Etherne
 original/    MacNetScan 1 (MPW, one C file)
 ```
 
+## Testing the dissector on the host
+
+`netcore/frames.c` makes no Open Transport calls, so it also compiles on the host. `tests/host/run.sh capture.pcap [-v] [-a] [-r MAC]`
+builds it with shims for the Mac headers and prints the Frames list (and with `-v` each protocol tree) of a pcap file - Ethernet,
+802.3/SNAP and 802.1Q as `tcpdump` writes them, or MacNetScan's own export. `-a` keeps AppleTalk and AARP only, `-r MAC` leaves
+out what that Mac sent, which is what its own Listen sees. A capture of a guest bridged through `tun` (`tcpdump -i tun0 -w`)
+has both directions.
+
 ## Building
 
 1. A Visual Architect project in Symantec C++ 7 (project model "Visual Architect Project"), Generate once.
@@ -53,7 +61,7 @@ original/    MacNetScan 1 (MPW, one C file)
    `tools/patch_otlibs.py` first (the SDK's `Fail` and `FlushCache` collide with TCL's). The OT SDK headers go next
    to `netcore.c`; `OTCompat.h` and `OTNames.h` (MPW's upper-case pascal names) are here.
 3. Project type: **Far CODE**, partition 1500 K, creator `IPSc`. Segments: the OT libraries in one, `CViews.cp` in
-   another (23.3 K of 32 K), `netcore.c` alone in a third (23.6 K), `frames.c` in a fourth (14.1 K), `CATView.cp` in a
+   another (23.3 K of 32 K), `netcore.c` alone in a third (23.6 K), `frames.c` in a fourth (20.7 K), `CATView.cp` in a
    fifth (8.1 K) - drag each below the last segment in the project window. Nothing calls `UnloadSeg`, so the Open Transport notifiers in `netcore.c` stay resident.
 4. Build Application, then `SetFile -a B MacNetScan`.
 

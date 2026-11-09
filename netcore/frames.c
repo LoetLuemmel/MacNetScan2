@@ -202,6 +202,194 @@ static void NbpTuple(const UInt8 *p, long n, char *s)
 	}
 }
 
+/* ------------------------------------------------------------------ AppleTalk above DDP */
+
+	/* a Pascal string (a zone, a server name) onto s, printable characters only, s kept below limit bytes */
+static void CatPas(char *s, const UInt8 *p, long n, short limit)
+{
+	short len, i, o = 0;
+	if (n < 1) return;
+	len = p[0];
+	while (s[o]) o++;
+	for (i = 0; i < len && i + 1 < n && o < limit - 1; i++) s[o++] = (char) (p[1 + i] >= ' ' && p[1 + i] < 127 ? p[1 + i] : '?');
+	s[o] = 0;
+}
+
+	/* a 32-bit field as a signed number - also where long is 64 bits (the host test) */
+static long Signed32(UInt32 v)
+{
+	v &= 0xFFFFFFFFUL;
+	return (v & 0x80000000UL) ? -(long) ((~v & 0xFFFFFFFFUL) + 1) : (long) v;
+}
+
+static long Signed16(UInt16 v) { return (v & 0x8000) ? -((long) (UInt16) ~v + 1L) : (long) v; }
+
+static void CatSigned(char *s, long v)
+{
+	if (v < 0) { StrCat(s, "-"); CatNum(s, (unsigned long) -v); } else CatNum(s, (unsigned long) v);
+}
+
+static const char *AspName(UInt8 fn)
+{
+	static const char *k[] = { "?", "CloseSess", "Command", "GetStatus", "OpenSess", "Tickle", "Write", "WriteContinue", "Attention" };
+	return fn <= 8 ? k[fn] : "?";
+}
+
+	/* AFP 2.x command codes, as the first byte of an ASP Command or Write */
+static const char *AfpName(UInt8 c)
+{
+	static const char *k[] = { "?", "ByteRangeLock", "CloseVol", "CloseDir", "CloseFork", "CopyFile", "CreateDir",
+		"CreateFile", "Delete", "Enumerate", "Flush", "FlushFork", "?", "?", "GetForkParms", "GetSrvrInfo",
+		"GetSrvrParms", "GetVolParms", "Login", "LoginCont", "Logout", "MapID", "MapName", "MoveAndRename",
+		"OpenVol", "OpenDir", "OpenFork", "Read", "Rename", "SetDirParms", "SetFileParms", "SetForkParms",
+		"SetVolParms", "Write", "GetFileDirParms", "SetFileDirParms", "ChangePassword", "GetUserInfo",
+		"GetSrvrMsg", "CreateID", "DeleteID", "ResolveID", "ExchangeFiles", "CatSearch" };
+	static const char *d[] = { "OpenDT", "CloseDT", "?", "GetIcon", "GetIconInfo", "AddAPPL", "RemoveAPPL",
+		"GetAPPL", "AddComment", "RemoveComment", "GetComment" };
+	if (c <= 43) return k[c];
+	if (c >= 48 && c <= 58) return d[c - 48];
+	if (c == 192) return "AddIcon";
+	return "?";
+}
+
+	/* an AFP result code by name, the common ones; NULL for the rest */
+static const char *AfpErr(long e)
+{
+	switch (e) {
+		case 0:		return "ok";
+		case -5000:	return "AccessDenied";
+		case -5001:	return "AuthContinue";
+		case -5002:	return "BadUAM";
+		case -5003:	return "BadVersNum";
+		case -5006:	return "DenyConflict";
+		case -5007:	return "DirNotEmpty";
+		case -5008:	return "DiskFull";
+		case -5009:	return "EOFErr";
+		case -5010:	return "FileBusy";
+		case -5013:	return "ItemNotFound";
+		case -5014:	return "LockErr";
+		case -5015:	return "MiscErr";
+		case -5017:	return "ObjectExists";
+		case -5018:	return "ObjectNotFound";
+		case -5019:	return "ParamErr";
+		case -5023:	return "UserNotAuth";
+		case -5024:	return "CallNotSupported";
+		case -5025:	return "ObjectTypeErr";
+		case -5028:	return "ServerGoingDown";
+	}
+	return NULL;
+}
+
+static void CatAfpResult(char *s, long e)
+{
+	const char *nm = AfpErr(e);
+	if (nm) StrCat(s, nm);
+	if (e != 0) { StrCat(s, nm ? " (" : "error "); CatSigned(s, e); if (nm) StrCat(s, ")"); }
+}
+
+	/* ZIP's functions: over DDP (1-8), and the ATP requests to socket 6 (7-9, a different numbering) */
+static const char *ZipName(UInt8 fn, short atp)
+{
+	static const char *k[] = { "?", "Query", "Reply", "TakeDown", "BringUp", "GetNetInfo", "GetNetInfo Reply",
+		"Notify", "Extended Reply" };
+	if (atp) return fn == 7 ? "GetMyZone" : fn == 8 ? "GetZoneList" : fn == 9 ? "GetLocalZones" : "?";
+	return fn <= 8 ? k[fn] : "?";
+}
+
+	/* what an ATP transaction carries, from its request: ZIP to socket 6, else ASP if the first user byte is an
+	   ASP function. PAP (printing) puts its function in the second user byte and can read as ASP - no state tells. */
+enum { kAtpPlain = 0, kAtpZip, kAtpAsp };
+
+static short AtpKind(const UInt8 *req)
+{
+	if (req[10] == 6) return kAtpZip;
+	if (req[13 + 4] >= 1 && req[13 + 4] <= 8) return kAtpAsp;
+	return kAtpPlain;
+}
+
+	/* the request a TResp answers: an earlier TReq with its TID, from the response's destination to its source */
+static const NCFrame *AtpRequest(const NCFrame *f)
+{
+	const UInt8 *p = f->data;
+	UInt16 tid = Get16(p + 15);
+	long i, total = NC_FrameTotal();
+	for (i = total - 1; i >= 0 && i >= total - NC_MAXFRAMES; i--) {
+		const NCFrame *g = NC_Frame(i);
+		const UInt8 *q;
+		if (!g) break;
+		if (g == f || g->us > f->us || g->type != 0x809B || g->caplen < 21) continue;
+		q = g->data;
+		if (q[12] != 3 || (q[13] >> 6) != 1 || Get16(q + 15) != tid) continue;
+		if (Get16(q + 6) == Get16(p + 4) && q[9] == p[8] && q[11] == p[10] && q[8] == p[9] && q[10] == p[11]) return g;
+	}
+	return NULL;
+}
+
+	/* the bytes of ATP data, from DDP's length: Open Transport's frame length counts Ethernet's padding too */
+static long AtpData(const NCFrame *f)
+{
+	long l = (long) (Get16(f->data) & 0x3FF) - 21;
+	return l > 0 ? l : 0;
+}
+
+	/* the summary of an ATP packet (DDP type 3) and what rides on it */
+static void AtpSummary(const NCFrame *f, char *proto, char *info)
+{
+	const UInt8 *p = f->data, *u = p + 17, *d = p + 21;
+	long dn = f->caplen - 21;
+	UInt8 fn = (UInt8) (p[13] >> 6);
+	const NCFrame *rq;
+	proto[0] = 0;
+	if (fn == 3) { StrCat(proto, "ATP"); StrCat(info, "TRel  TID "); CatNum(info, Get16(p + 15)); return; }
+	rq = fn == 1 ? f : fn == 2 ? AtpRequest(f) : NULL;
+	if (!rq && fn == 2 && p[11] == 6) {						/* from ZIP's socket: zones, whichever request it was */
+		StrCat(proto, "ZIP"); StrCat(info, "Zone list  "); CatNum(info, Get16(u + 2)); StrCat(info, " zones");
+		if (dn >= 2) { StrCat(info, "  "); CatPas(info, d, dn, 96); }
+		if (u[0]) StrCat(info, "  (last)");
+		return;
+	}
+	if (!rq) {
+		long r = Signed32(Get32(u));
+		StrCat(proto, "ATP"); StrCat(info, fn == 1 ? "TReq" : fn == 2 ? "TResp" : "?");
+		StrCat(info, "  TID "); CatNum(info, Get16(p + 15));
+		if (fn == 2) {
+			if (r == 0 || AfpErr(r)) { StrCat(info, "  "); CatAfpResult(info, r); }
+			StrCat(info, "  len "); CatNum(info, AtpData(f));
+		}
+		return;
+	}
+	switch (AtpKind(rq->data)) {
+	case kAtpZip:
+		StrCat(proto, "ZIP"); StrCat(info, ZipName(rq->data[17], 1));
+		if (fn == 1) { StrCat(info, " from "); CatNum(info, Get16(u + 2)); }
+		else {
+			StrCat(info, " Reply  "); CatNum(info, Get16(u + 2)); StrCat(info, " zones");
+			if (dn >= 2) { StrCat(info, "  "); CatPas(info, d, dn, 96); }
+			if (u[0]) StrCat(info, "  (last)");
+		}
+		break;
+	case kAtpAsp: {
+		UInt8 af = rq->data[17];
+		long rn = rq->caplen - 21;
+		UInt8 cmd = (UInt8) (rn >= 1 ? rq->data[21] : 0);
+		if ((af == 2 || af == 6) && rn >= 1) {
+			StrCat(proto, "AFP"); StrCat(info, "FP"); StrCat(info, AfpName(cmd));
+			if (fn == 1) { StrCat(info, "  sess "); CatNum(info, u[1]); StrCat(info, " #"); CatNum(info, Get16(u + 2)); }
+			else { StrCat(info, " Reply  "); CatAfpResult(info, Signed32(Get32(u))); }
+		} else {
+			StrCat(proto, "ASP"); StrCat(info, AspName(af));
+			if (fn == 2) StrCat(info, " Reply");
+			if (af == 5 || af == 1) { StrCat(info, "  sess "); CatNum(info, fn == 1 ? u[1] : rq->data[18]); }
+			if (af == 4 && fn == 2) { StrCat(info, "  sess "); CatNum(info, u[1]); StrCat(info, "  "); CatAfpResult(info, Signed16(Get16(u + 2))); }
+			if (af == 3 && fn == 2 && dn >= 12) { StrCat(info, "  "); CatPas(info, d + 10, dn - 10, 96); }
+		}
+		break;
+	}
+	default:
+		StrCat(proto, "ATP"); StrCat(info, fn == 1 ? "TReq" : "TResp"); StrCat(info, "  TID "); CatNum(info, Get16(p + 15));
+	}
+}
+
 void NC_FrameSummary(const NCFrame *f, char *src, char *dst, char *proto, char *info)
 {
 	const UInt8 *p = f->data;
@@ -304,6 +492,13 @@ void NC_FrameSummary(const NCFrame *f, char *src, char *dst, char *proto, char *
 			StrCat(info, fn <= 4 ? kNbpFn[fn] : "?"); StrCat(info, " ");
 			NbpTuple(p + 13, n - 13, info);
 		} else if (p[12] == 1 && n >= 17) { StrCat(info, "Router "); CatNum(info, Get16(p + 13)); StrCat(info, "."); CatNum(info, p[16]); }
+		else if (p[12] == 3 && n >= 21) AtpSummary(f, proto, info);
+		else if (p[12] == 6 && n >= 14) {
+			StrCat(info, ZipName(p[13], 0));
+			if ((p[13] == 5 || p[13] == 6) && n >= 20) { StrCat(info, "  "); CatPas(info, p + 19, n - 19, 96); }
+		}
+		else if (p[12] == 4 && n >= 14) StrCat(info, p[13] == 1 ? "Echo request" : p[13] == 2 ? "Echo reply" : "?");
+		else if (p[12] == 5 && n >= 14) StrCat(info, p[13] == 1 ? "Route request" : p[13] == 2 ? "Route data request" : p[13] == 3 ? "Route data request, full" : "?");
 		else { StrCat(info, "len "); CatNum(info, Get16(p) & 0x3FF); }
 		break;
 	case 0x80F3:												/* AARP */
@@ -357,6 +552,127 @@ static short DnsDetail(const UInt8 *m, long mn, UInt16 sp, UInt16 dp, char (*lin
 			if (DnsName(m, mn, off + u + 10, tgt, sizeof(tgt)) > 0) { L; StrCat(s, "      -> "); StrCat(s, tgt); }
 		}
 		off += u + 10 + rl;
+	}
+	return nl;
+}
+
+	/* the tree above DDP for RTMP, AEP, RTMP requests, ZIP and ATP with ZIP, ASP and AFP on it */
+static short AppleTalkDetail(const NCFrame *f, char (*lines)[NC_DETAILLEN], short max, short nl)
+{
+	const UInt8 *p = f->data;
+	long n = f->caplen;
+	char *s;
+	short i;
+	switch (p[12]) {
+	case 1: {													/* RTMP data: the sender, then the routing tuples */
+		long o = 17;
+		H; StrCat(s, "RTMP");
+		if (n < 17) break;
+		L; StrCat(s, "  Router  "); CatNum(s, Get16(p + 13)); StrCat(s, "."); CatNum(s, p[16]);
+		for (i = 0; o + 3 <= n && i < 12; i++) {
+			UInt8 dist = p[o + 2];
+			L; StrCat(s, "  Net "); CatNum(s, Get16(p + o));
+			if ((dist & 0x80) && o + 6 <= n) { StrCat(s, "-"); CatNum(s, Get16(p + o + 3)); }
+			StrCat(s, "  distance "); CatNum(s, dist & 0x1F);
+			o += (dist & 0x80) ? 6 : 3;
+		}
+		break;
+	}
+	case 4:
+		H; StrCat(s, "AEP");
+		if (n < 14) break;
+		L; StrCat(s, "  "); StrCat(s, p[13] == 1 ? "Echo request (1)" : p[13] == 2 ? "Echo reply (2)" : "?");
+		StrCat(s, ", "); CatNum(s, n - 14); StrCat(s, " bytes echoed");
+		break;
+	case 5:
+		H; StrCat(s, "RTMP Request");
+		if (n < 14) break;
+		L; StrCat(s, "  Function "); CatNum(s, p[13]);
+		StrCat(s, p[13] == 1 ? " (route request)" : p[13] == 2 ? " (data, split horizon)" : p[13] == 3 ? " (data, full table)" : "");
+		break;
+	case 6:
+		H; StrCat(s, "ZIP");
+		if (n < 14) break;
+		L; StrCat(s, "  Function "); CatNum(s, p[13]); StrCat(s, " ("); StrCat(s, ZipName(p[13], 0)); StrCat(s, ")");
+		if ((p[13] == 5 || p[13] == 6) && n >= 20) {
+			L; StrCat(s, "  Flags 0x"); CatHex(s, p[14], 2);
+			if (p[13] == 6) { StrCat(s, "  net "); CatNum(s, Get16(p + 15)); StrCat(s, "-"); CatNum(s, Get16(p + 17)); }
+			L; StrCat(s, "  Zone  "); CatPas(s, p + 19, n - 19, NC_DETAILLEN);
+		}
+		break;
+	case 3: {
+		const UInt8 *u = p + 17, *d = p + 21;
+		long dn = n - 21;
+		UInt8 fn = (UInt8) (p[13] >> 6);
+		const NCFrame *rq;
+		H; StrCat(s, "ATP");
+		if (n < 21) break;
+		L; StrCat(s, "  "); StrCat(s, fn == 1 ? "TReq" : fn == 2 ? "TResp" : fn == 3 ? "TRel" : "?");
+		StrCat(s, "  TID "); CatNum(s, Get16(p + 15));
+		StrCat(s, fn == 1 ? "  bitmap 0x" : "  seq 0x"); CatHex(s, p[14], 2);
+		L; StrCat(s, "  Control 0x"); CatHex(s, p[13], 2);
+		if (p[13] & 0x20) StrCat(s, "  XO");
+		if (p[13] & 0x10) StrCat(s, "  EOM");
+		if (p[13] & 0x08) StrCat(s, "  STS");
+		L; StrCat(s, "  User bytes  "); for (i = 0; i < 4; i++) { CatHex(s, u[i], 2); StrCat(s, " "); }
+		StrCat(s, " data "); CatNum(s, AtpData(f));
+		if (fn == 3) break;
+		rq = fn == 1 ? f : AtpRequest(f);
+		if (!rq) {
+			long r = Signed32(Get32(u));
+			L; StrCat(s, "  Request not captured: Open Transport hands");
+			L; StrCat(s, "  on only what this Mac receives");
+			if (p[11] == 6) {									/* ZIP's socket: a zone list */
+				long o = 0;
+				H; StrCat(s, "ZIP");
+				L; StrCat(s, "  Zone list  "); CatNum(s, Get16(u + 2)); StrCat(s, " zones"); if (u[0]) StrCat(s, "  last");
+				for (i = 0; o < dn && i < 8; i++) { L; StrCat(s, "  Zone  "); CatPas(s, d + o, dn - o, NC_DETAILLEN); o += 1 + d[o]; }
+			} else if (r == 0 || AfpErr(r)) { L; StrCat(s, "  As an ASP reply: result "); CatAfpResult(s, r); }
+			break;
+		}
+		if (fn == 2) {
+			unsigned long dt = f->us - rq->us;
+			L; StrCat(s, "  Answers the TReq after "); CatNum(s, dt / 1000UL); StrCat(s, "."); CatNum(s, (dt / 100UL) % 10); StrCat(s, " ms");
+		}
+		switch (AtpKind(rq->data)) {
+		case kAtpZip:
+			H; StrCat(s, "ZIP");
+			L; StrCat(s, "  "); StrCat(s, ZipName(rq->data[17], 1)); StrCat(s, fn == 1 ? "  start " : " Reply  zones ");
+			CatNum(s, Get16(u + 2)); if (fn == 2 && u[0]) StrCat(s, "  last");
+			if (fn == 2) {
+				long o = 0;
+				for (i = 0; o < dn && i < 8; i++) { L; StrCat(s, "  Zone  "); CatPas(s, d + o, dn - o, NC_DETAILLEN); o += 1 + d[o]; }
+			}
+			break;
+		case kAtpAsp: {
+			UInt8 af = rq->data[17];
+			long rn = rq->caplen - 21;
+			H; StrCat(s, "ASP");
+			L; StrCat(s, "  "); StrCat(s, AspName(af)); StrCat(s, fn == 1 ? "" : " Reply"); StrCat(s, "  (SPFunction "); CatNum(s, af); StrCat(s, ")");
+			if (fn == 1) {
+				if (af == 4) { L; StrCat(s, "  Workstation socket "); CatNum(s, u[1]); StrCat(s, ", version 0x"); CatHex(s, Get16(u + 2), 4); }
+				else if (af != 3) { L; StrCat(s, "  Session "); CatNum(s, u[1]); if (af == 2 || af == 6 || af == 7) { StrCat(s, ", sequence "); CatNum(s, Get16(u + 2)); } }
+			} else if (af == 4) {
+				L; StrCat(s, "  Server socket "); CatNum(s, u[0]); StrCat(s, ", session "); CatNum(s, u[1]);
+				L; StrCat(s, "  Result  "); CatAfpResult(s, Signed16(Get16(u + 2)));
+			} else if (af == 3 && dn >= 12) {
+				L; StrCat(s, "  Server  "); CatPas(s, d + 10, dn - 10, NC_DETAILLEN);
+				L; StrCat(s, "  Flags 0x"); CatHex(s, Get16(d + 8), 4);
+			}
+			if ((af == 2 || af == 6) && rn >= 1) {
+				UInt8 cmd = rq->data[21];
+				H; StrCat(s, "AFP");
+				L; StrCat(s, "  FP"); StrCat(s, AfpName(cmd)); StrCat(s, "  (command "); CatNum(s, cmd); StrCat(s, ")");
+				if (fn == 2) { L; StrCat(s, "  Result  "); CatAfpResult(s, Signed32(Get32(u))); StrCat(s, ", "); CatNum(s, AtpData(f)); StrCat(s, " bytes"); }
+				else if (rn >= 4 && (cmd == 17 || cmd == 26 || cmd == 4 || cmd == 27 || cmd == 33)) {
+					L; StrCat(s, cmd == 17 || cmd == 26 ? "  Volume " : "  Fork "); CatNum(s, Get16(rq->data + 23));	/* after a pad or flag byte */
+				}
+			}
+			break;
+		}
+		}
+		break;
+	}
 	}
 	return nl;
 }
@@ -485,7 +801,7 @@ short NC_FrameDetail(const NCFrame *f, char (*lines)[NC_DETAILLEN], short max)
 			H; StrCat(s, "NBP");
 			L; StrCat(s, "  Function "); CatNum(s, p[13] >> 4); StrCat(s, ", tuples "); CatNum(s, p[13] & 15); StrCat(s, ", id "); CatNum(s, p[14]);
 			L; StrCat(s, "  "); NbpTuple(p + 13, n - 13, s);
-		}
+		} else nl = AppleTalkDetail(f, lines, max, nl);
 		break;
 	case 0x80F3:
 		H; StrCat(s, "AARP");
