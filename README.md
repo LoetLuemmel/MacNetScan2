@@ -51,6 +51,17 @@ builds it with shims for the Mac headers and prints the Frames list (and with `-
 out what that Mac sent, which is what its own Listen sees; `-f` applies the Frames filter. Files go through the same `NC_PcapToFrame` as Open pcap. A capture of a guest bridged through `tun` (`tcpdump -i tun0 -w`)
 has both directions.
 
+## One version for every Mac: the "Projekte" shelf
+
+Git is the source. The Macs take MacNetScan from `Projekte:MacNetScan ƒ` (AppleShare on ApfelNetz) - the project,
+its resources, the sources, the Open Transport SDK files in `Engine` and the built app, with a `STAND` file naming the
+git commit and the build. Copy the folder to the Mac's own disk to build or run it: building on the share is slow and
+two Macs on one project overwrite each other.
+
+`uv run tools/publish_projekte.py --sync` puts the committed sources (git HEAD) into the build guest's project
+(odroid-c2), converted to MacRoman with the right types; build there; `--publish` then copies project and app to the
+shelf over AFP from the guest itself, so forks, types and netatalk's bookkeeping stay right.
+
 ## Building
 
 1. A Visual Architect project in Symantec C++ 7 (project model "Visual Architect Project"), Generate once.
