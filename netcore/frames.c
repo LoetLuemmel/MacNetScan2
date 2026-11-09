@@ -704,13 +704,13 @@ short NC_FrameDetail(const NCFrame *f, char (*lines)[NC_DETAILLEN], short max)
 	short nl = 0;
 	char *s;
 
-	H; StrCat(s, "Frame  "); CatNum(s, f->len); StrCat(s, " bytes, "); CatNum(s, f->caplen); StrCat(s, " kept");
-	L; StrCat(s, "  Arrival  +"); CatNum(s, f->us / 1000000UL); StrCat(s, ".");
+	/* the header is kept to two lines: the tree pane holds about 18, and the protocol's own fields (an AFP call's
+	   version, login method and user) come last. Open Transport hands no MAC header on: sender and type only. */
+	H; StrCat(s, "Frame  "); CatNum(s, f->len); StrCat(s, " bytes, "); CatNum(s, f->caplen); StrCat(s, " kept, at +");
+	CatNum(s, f->us / 1000000UL); StrCat(s, ".");
 	{ char t[8]; unsigned long u = f->us % 1000000UL; short i; for (i = 5; i >= 0; i--) { t[i] = (char) ('0' + u % 10); u /= 10; } t[6] = 0; StrCat(s, t); }
 	StrCat(s, " s");
-	H; StrCat(s, "Link  (Open Transport hands no MAC header on)");
-	L; StrCat(s, "  Source  "); CatMAC(s, f->src);
-	L; StrCat(s, "  Type  0x"); CatHex(s, f->type, 4);
+	H; StrCat(s, "Link  from "); CatMAC(s, f->src); StrCat(s, ", type 0x"); CatHex(s, f->type, 4);
 
 	switch (f->type) {
 	case 0x0806:
@@ -815,8 +815,7 @@ short NC_FrameDetail(const NCFrame *f, char (*lines)[NC_DETAILLEN], short max)
 		if (n < 13) break;
 		L; StrCat(s, "  Hops "); CatNum(s, (p[0] >> 2) & 15); StrCat(s, ", length "); CatNum(s, Get16(p) & 0x3FF); StrCat(s, ", type "); CatNum(s, p[12]);
 		StrCat(s, " ("); StrCat(s, DdpName(p[12])); StrCat(s, ")");
-		L; StrCat(s, "  Source  "); CatAT(s, p + 6, p[9], p[11]);
-		L; StrCat(s, "  Destination  "); CatAT(s, p + 4, p[8], p[10]);
+		L; StrCat(s, "  "); CatAT(s, p + 6, p[9], p[11]); StrCat(s, "  >  "); CatAT(s, p + 4, p[8], p[10]);
 		if (p[12] == 2 && n > 15) {
 			H; StrCat(s, "NBP");
 			L; StrCat(s, "  Function "); CatNum(s, p[13] >> 4); StrCat(s, ", tuples "); CatNum(s, p[13] & 15); StrCat(s, ", id "); CatNum(s, p[14]);
