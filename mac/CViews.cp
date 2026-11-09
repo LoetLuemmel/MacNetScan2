@@ -1047,9 +1047,9 @@ void CFramesPane::Draw(Rect *area)
 	if (f == NULL) {
 		RGBForeColor(&kInkSoft);
 		MoveTo((short) (r.left + 14), (short) (top + 20));
-		if (frameNo >= 0) DrawC("This frame has been overwritten - the last 400 are kept.");
+		if (frameNo >= 0) DrawC("This frame has been overwritten - the last 500 are kept.");
 		else {
-			s[0] = '\0'; CCatNum(s, NC_FrameTotal()); CCat(s, " frames captured; the last 400 are kept.");
+			s[0] = '\0'; CCatNum(s, NC_FrameTotal()); CCat(s, " frames captured; the last 500 are kept.");
 			if (NC_Listening()) DrawC("Capturing. Frames are what Listen hears; nothing is sent.");
 			else DrawC(NC_FrameTotal() > 0 ? s : "Press Scan to capture. Frames are what Listen hears; nothing is sent.");
 			MoveTo((short) (r.left + 14), (short) (top + 34));

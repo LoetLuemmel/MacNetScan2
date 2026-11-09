@@ -37,6 +37,7 @@ class CMain;
 #define cmdViewFrames	615L	/*            Frames				*/
 #define cmdGrid			616L	/*            Grid Lines (on/off)	*/
 #define cmdDemo			617L	/*            Demo Mode (on/off)	*/
+#define cmdHelp			618L	/*            MacNetScan Help...	*/
 #define cmdToolPing		620L	/* Tools view buttons				*/
 #define cmdToolDns		621L
 #define cmdToolTrace	622L
