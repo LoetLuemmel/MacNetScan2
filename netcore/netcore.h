@@ -218,7 +218,7 @@ const NCEdge *NC_Edge(short i);
 
 	/* frames: what Listen received, the last NC_MAXFRAMES kept for the Frames view. Open Transport hands a frame
 	   on without its MAC header: the sender's MAC comes along, the destination MAC does not. */
-#define NC_MAXFRAMES	400
+#define NC_MAXFRAMES	500
 #define NC_SNAPLEN		384
 #define NC_DETAILLEN	64
 typedef struct {

@@ -23,6 +23,8 @@
 #include "AppCommands.h"
 #include "netcore.h"
 
+void ShowHelp(void);					/* CHelp.cp: View > MacNetScan Help */
+
 #include <CApplication.h>
 #include <CBartender.h>
 #include <Commands.h>
@@ -1270,6 +1272,7 @@ void CMain::DoCommand(long theCommand)
 		case cmdToolTrace:	StartTool(3); break;
 		case cmdFrameFilter:
 		case cmdFrameOpen:	FramesCommand(theCommand); break;
+		case cmdHelp:		ShowHelp(); break;
 		default:			x_CMain::DoCommand(theCommand); break;
 	}
 }
@@ -1307,5 +1310,6 @@ void CMain::UpdateMenus()
 	gBartender->EnableCmd(cmdGrid);
 	gBartender->CheckMarkCmd(cmdGrid, gShowGrid);
 	gBartender->EnableCmd(cmdDemo);
+	gBartender->EnableCmd(cmdHelp);
 	gBartender->CheckMarkCmd(cmdDemo, gDemo);
 }

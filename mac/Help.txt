@@ -1,0 +1,82 @@
+MacNetScan Help
+
+MacNetScan looks at the network this Mac is on: IP hosts and their services, AppleTalk devices by zone, the traffic that reaches the Mac, who talks to whom, and the frames themselves. Choose a view with the tabs or View > 1-6, start and stop with the green and red buttons (Scan > Start Scan, Cmd-R; Stop, Cmd-.).
+
+  • IP Network - sweeps the /24 for hosts and ten well-known ports.
+  • AppleTalk - every NBP entity in every zone, echo times, routers and zones.
+  • Listen - passive: protocol meters, stations, events. Nothing is sent.
+  • Tools - ping, DNS lookup, traceroute.
+  • Map - who sends to whom, from what Listen hears.
+  • Frames - the captured frames: list, protocol tree, bytes.
+
+Scan > Export Report saves what the view shows as text; in Frames it saves a pcap file for Wireshark. Copy Report puts it on the clipboard.
+
+
+THE FRAMES VIEW
+
+Press Scan in Frames (or in Listen or Map) to capture. The list shows the last 500 frames: number, time, source, destination, protocol and a one-line summary. Click a frame to see its protocol tree on the left and its bytes on the right; the list then holds still. Click the same frame again and the list follows the capture live.
+
+The tree takes apart Ethernet types ARP, IPv4 (UDP, TCP, ICMP, DNS, mDNS, LLMNR, DHCP), IPv6, LLDP and AppleTalk: DDP, NBP, RTMP, AEP, ZIP, AARP and ATP. On ATP it recognises ZIP (requests to socket 6) and ASP - Tickle, OpenSess, GetStatus, Command, Write, CloseSess - and in an ASP Command the AFP call: FPLogin with its AFP version, login method and user name (never the password), FPOpenVol with the volume, FPRead with fork, offset and length, and the names of the other AFP calls. A reply is matched to its request by transaction ID and addresses: the list then reads "FPGetVolParms Reply  ok" and the tree says how long the server took to answer.
+
+What Listen cannot see: Open Transport hands on only what this Mac RECEIVES - not what it sends. In a live capture the answers to this Mac's own requests stand alone. A reply from ZIP's socket still lists its zones; any other reply shows its first four bytes read as an ASP result ("ok", or an AFP error). Open a capture file to see both directions.
+
+
+OPEN PCAP
+
+The Open pcap button in the Frames view reads a capture file instead of listening. Listen stops first. Any pcap file works that tcpdump, Wireshark or MacNetScan itself writes:
+  • Ethernet, also with 802.1Q VLAN tags and 802.3 frames with SNAP (AppleTalk, AARP)
+  • Linux "cooked" captures (link type 113) - MacNetScan's own export
+  • microsecond or nanosecond time stamps, either byte order
+The last 500 frames of the file are kept, 384 bytes of each. Times count from the first frame of the file. The status line shows the file name and the number of frames read.
+
+A capture taken outside this Mac sees both directions. For a Basilisk II guest bridged through tun on Linux, take it on the host:
+  sudo tcpdump -i tun0 -w session.pcap
+or for AppleTalk only:
+  sudo tcpdump -i tun0 -w session.pcap atalk or aarp
+
+
+THE FILTER
+
+Type words into the field above the list and press Return (or click Filter). The list then shows only the frames in which EVERY word appears - in the source, the destination, the protocol or the info column. Case does not matter. A word starting with ! must NOT appear. Empty the field and press Return to see all frames again. The status line shows how many frames match.
+
+  • "afp" - AFP calls and replies (also NBP names with "AFPServer")
+  • "zip" - zone lists
+  • "3.138" - everything to or from AppleTalk node 3.138
+  • "fpread" - only the FPRead calls and their replies
+  • "!rtmp !tickle" - everything but router broadcasts and session tickles
+  • "192.168.3.1 arp" - ARP to or from the router
+  • "-50" - AFP replies with an error code (they are -5000 to -5099)
+
+The filter works on a live capture too: each new frame is checked once as it arrives.
+
+
+A WORKED EXAMPLE: AN APPLESHARE SESSION
+
+The file "AFP session.pcap" next to MacNetScan was taken on the Linux host of a Basilisk guest while that guest opened the AppleShare server odroid-u3, logged in, opened the volume test1, read a small file and disconnected. It has 477 frames in both directions. The guest is AppleTalk node 3.56, the server odroid-u3 is 3.138, the router ApfelNetz is 3.80.
+
+1. Frames > Open pcap, choose "AFP session.pcap". The list shows the end of the file; scroll up for the start.
+
+2. Filter "zip". Two frames: the guest asks the router (socket 6) for the zone list, the router answers with two zones. Click the reply: the tree lists ApfelNetz and Pit.
+
+3. Filter "nbp". The Chooser looks up "=:AFPServer@ApfelNetz": a BrRq to the router, which turns it into a LkUp to every node, and the replies of the three servers. The lookup is repeated about every 0.8 s while the Chooser is open.
+
+4. Filter "3.138 !getfile !getvol !trel !tickle": node 3.138 without the Finder's routine polls. The first lines are the server's NBP replies to the Chooser and an AARP and echo exchange; then the session itself:
+  • GetStatus and its reply - the server's name, odroid-u3.
+  • OpenSess - the reply gives the session number and the server's socket.
+  • FPLogin - click it: AFP version 2.1, login method "Cleartxt passwrd", user Pit. Click the reply: "Answers the TReq after 1813.2 ms" - the login is the slow step; every other call is answered in 1 to 5 ms.
+  • FPGetSrvrParms, FPOpenVol (volume test1), FPEnumerate (the folder's contents), FPOpenFork, FPGetForkParms, FPRead (fork, offset 0, 39 bytes), FPCloseFork.
+  • FPCloseVol and CloseSess at the end.
+
+5. Filter "-50". The ObjectNotFound (-5018) replies are normal: the Finder asks for its desktop files and icons, which a netatalk volume does not have, and FPEnumerate ends a folder's listing with this code.
+
+6. Filter "getvolparms 3.80". About every 10 seconds the Finder asks the volume it has mounted from ApfelNetz how much space is free. That is the steady background traffic of a mounted AppleShare volume.
+
+
+LIMITS
+
+  • The last 500 frames are kept, 384 bytes of each.
+  • Open Transport hands on no MAC header: the link layer shows the sender and the type only.
+  • Live, only what reaches this Mac: frames it sends are not captured.
+  • Frame times wrap after about 71 minutes.
+
+MacNetScan 2 - (c) 2026 Pit Förster, MIT License. Built with Claude Code.

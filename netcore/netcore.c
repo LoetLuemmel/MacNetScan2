@@ -2097,7 +2097,7 @@ long NC_ListenStart(void)
 	if (!gEvents) gEvents = (char (*)[NC_EVENTLEN]) NewPtrClear((long) NC_MAXEVENTS * NC_EVENTLEN);
 	if (!gLsBuf) gLsBuf = (UInt8 *) NewPtr(LS_BUFSIZE);
 	if (!gEdges) gEdges = (NCEdge *) NewPtrClear((long) NC_MAXEDGES * sizeof(NCEdge));
-	if (!gFrames) gFrames = (NCFrame *) NewPtr((long) NC_MAXFRAMES * sizeof(NCFrame));	/* ~160 KB; the view does without */
+	if (!gFrames) gFrames = (NCFrame *) NewPtr((long) NC_MAXFRAMES * sizeof(NCFrame));	/* ~200 KB; the view does without */
 	if (!gStations || !gEvents || !gLsBuf || !gEdges) return memFullErr;
 	for (k = 0; k < LS_COUNT; k++) {
 		gLsEp[k] = OTOpenEndpoint(OTCreateConfiguration(kEnetName), 0, NULL, &err);

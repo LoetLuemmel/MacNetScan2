@@ -6,7 +6,7 @@ Git stays the source (history, review, host tests). The Macs take the project fr
 building ON the share is slow (AFP, about 700 KB/s) and two Macs on one .π overwrite each other.
 
   --sync     the COMMITTED sources (git HEAD, not the working tree) into the build guest's own project folder,
-             UTF-8 -> MacRoman, LF -> CR, type TEXT/KAHL (resources TEXT/MPS). Then build there (THINK: Cmd-K the
+             UTF-8 -> MacRoman, LF -> CR, type TEXT/KAHL (resources TEXT/MPS), and Rez Menus.r and Help.r. Then build there (THINK: Cmd-K the
              changed files, Project > Build Application, SetFile -a B).
   --publish  the build guest's project folder -> the shelf, over AFP from the guest itself, so forks, types and
              netatalk's AppleDouble/CNID bookkeeping stay right; writing the share from Linux would bypass them.
@@ -41,14 +41,21 @@ SHELF = "Projekte:MacNetScan ƒ"
 
 # git path -> (folder in the project, type, creator)
 SOURCES = {f"mac/{n}": ("Source", "TEXT", "KAHL") for n in
-           ("CApp.cp", "CApp.h", "CATView.cp", "CMain.cp", "CMain.h", "CViews.cp", "CViews.h", "Look.h")}
+           ("CApp.cp", "CApp.h", "CATView.cp", "CHelp.cp", "CMain.cp", "CMain.h", "CViews.cp", "CViews.h", "Look.h")}
 SOURCES.update({f"netcore/{n}": ("Engine", "TEXT", "KAHL") for n in
                 ("frames.c", "netcore.c", "netcore.h", "OTCompat.h", "OTNames.h", "otstubs.c")})
-SOURCES.update({f"mac/{n}": ("", "TEXT", "MPS ") for n in ("Extras.r", "Icons.r", "Menus.r")})
+SOURCES.update({f"mac/{n}": ("", "TEXT", "MPS ") for n in ("Extras.r", "Icons.r", "Menus.r", "Help.r")})
+SOURCES["mac/Help.txt"] = ("", "TEXT", "ttxt")          # Help.r reads it into TEXT 400
+# Rez'd after a sync, from the project folder. THINK links BOTH resource files into the app: a resource that is new
+# must be in only one of them (TEXT 400 in both: "duplicate resource"); the MENUs were in both from the start.
+REZ = [("Menus.r", ["MacNetScan.π.rsrc", "Project Resources.rsrc"]), ("Help.r", ["Project Resources.rsrc"])]
+# copied byte for byte, under the name the Help text uses
+BINARIES = {"examples/afp_session.pcap": ("AFP session.pcap", "BINA", "????")}
 
 # what the shelf holds: enough to build (project, resources, sources, the OT SDK in Engine) and the app itself
 SHELF_ITEMS = ["MacNetScan", "MacNetScan.π", "MacNetScan.π.rsrc", "Project Resources.rsrc", "Visual Architect.rsrc",
-               "Source", "Engine", "Extras.r", "Icons.r", "Menus.r", "PLACEHOLDER.cpp", "READ ME.cp"]
+               "Source", "Engine", "Extras.r", "Icons.r", "Menus.r", "Help.r", "Help.txt", "PLACEHOLDER.cpp",
+               "READ ME.cp", "AFP session.pcap"]
 SHELF_DROP = ["Engine:dump.txt"]                # a local leftover inside a folder that is copied whole
 
 
@@ -98,12 +105,21 @@ def sync():
         text = subprocess.run(["git", "-C", str(REPO), "show", f"HEAD:{path}"],
                               capture_output=True, text=True, check=True).stdout
         files[Path(path).name] = utf8_to_macroman(text.replace("\r\n", "\n")).replace(b"\n", b"\r")
+    for path, (name, _, _) in BINARIES.items():
+        files[name] = subprocess.run(["git", "-C", str(REPO), "show", f"HEAD:{path}"],
+                                     capture_output=True, check=True).stdout
     upload(files)
     for path, (folder, ftype, creator) in SOURCES.items():
         name = Path(path).name
         dest = f"{LOCAL}:{folder + ':' if folder else ''}{name}"
         mpw(f'Duplicate -y "{DROP_MAC}{name}" "{dest}"')
         mpw(f'SetFile -t {ftype} -c "{creator}" "{dest}"')
+    for path, (name, ftype, creator) in BINARIES.items():
+        mpw(f'Duplicate -y "{DROP_MAC}{name}" "{LOCAL}:{name}"')
+        mpw(f'SetFile -t {ftype} -c "{creator}" "{LOCAL}:{name}"')
+    for src, targets in REZ:
+        for t in targets:
+            mpw(f'Directory "{LOCAL}:"; Rez "{src}" -a -o "{t}"')
     print(f"synced {len(SOURCES)} sources of {rev} into {GUEST}:{LOCAL}")
     print("next: build there (THINK: Cmd-K each changed file, Project > Build Application, SetFile -a B), "
           "then --publish")
