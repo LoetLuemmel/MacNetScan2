@@ -5,7 +5,7 @@
 #include "Types.r"
 
 data 'IPSc' (0, "Owner resource") {
-	$"0E" "MacNetScan 2.0"
+	$"0E" "MacNetScan 2.1"
 };
 
 resource 'BNDL' (128) {
@@ -19,12 +19,12 @@ resource 'BNDL' (128) {
 resource 'FREF' (128) { 'APPL', 0, "" };
 
 resource 'vers' (1) {
-	0x02, 0x00, release, 0x00, verUS, "2.0",
-	"2.0, \0xA9 2026 Pit F\0x9Arster - MIT License"
+	0x02, 0x10, release, 0x00, verUS, "2.1",
+	"2.1, \0xA9 2026 Pit F\0x9Arster - MIT License"
 };
 
 resource 'vers' (2) {
-	0x02, 0x00, release, 0x00, verUS, "2.0", "MacNetScan 2"
+	0x02, 0x10, release, 0x00, verUS, "2.1", "MacNetScan 2"
 };
 
 data 'ICN#' (128, "MacNetScan") {
