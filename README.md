@@ -47,9 +47,9 @@ original/    MacNetScan 1 (MPW, one C file)
 
 ### A tour of MacNetScan 2
 
-[![A tour of MacNetScan 2 - click to play the MP4](docs/macnetscan2-tour-poster.png)](docs/macnetscan2-tour.mp4)
+[![A tour of MacNetScan 2 - click to play it on YouTube](docs/macnetscan2-tour-poster.png)](https://www.youtube.com/watch?v=xl-49uLU0bA&t=8s)
 
-2 min 37 s, 1080p ([MP4](docs/macnetscan2-tour.mp4), click the picture): every view once, in Demo Mode, so the names,
+2 min 37 s, 1080p - click the picture to play it [on YouTube](https://www.youtube.com/watch?v=xl-49uLU0bA&t=8s), or download the [MP4](https://github.com/LoetLuemmel/MacNetScan2/raw/main/docs/macnetscan2-tour.mp4): every view once, in Demo Mode, so the names,
 MAC addresses and bytes are made up. **IP Network** sweeps the /24 - hosts come in with their round trip and one LED
 per service, a click on a host opens its services. **AppleTalk** lists the NBP entities by zone with their echo times.
 **Listen** starts empty (it sends nothing) and fills with stations, protocol meters and events. **Map** draws who
