@@ -45,6 +45,19 @@ original/    MacNetScan 1 (MPW, one C file)
 
 ## Demo
 
+### A tour of MacNetScan 2
+
+[![A tour of MacNetScan 2 - click to play the MP4](docs/macnetscan2-tour-poster.png)](docs/macnetscan2-tour.mp4)
+
+2 min 37 s, 1080p ([MP4](docs/macnetscan2-tour.mp4), click the picture): every view once, in Demo Mode, so the names,
+MAC addresses and bytes are made up. **IP Network** sweeps the /24 - hosts come in with their round trip and one LED
+per service, a click on a host opens its services. **AppleTalk** lists the NBP entities by zone with their echo times.
+**Listen** starts empty (it sends nothing) and fills with stations, protocol meters and events. **Map** draws who
+sends to whom - unicast chords, the broadcast, mDNS, IPv6 multicast and AppleTalk groups inside. **Frames** follows
+the capture live, with the protocol tree of the selected frame. **Tools** looks up apple.com. The About box ends it.
+
+### The Frames view: an AppleShare session
+
 ![MacNetScan's Frames view walking through an AppleShare session](docs/macnetscan-frames-demo.gif)
 
 96 seconds, with captions ([MP4](docs/macnetscan-frames-demo.mp4)): Open pcap with `examples/afp_session.pcap`, the
