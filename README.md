@@ -1,6 +1,6 @@
 # MacNetScan 2
 
-A network scanner for System 7 on the classic 68K Macintosh, rebuilt from [MacNetScan 1](original/) with Symantec's
+A 'WireShark Light' network scanner for System 7 on the classic 68K Macintosh, rebuilt from [MacNetScan 1](original/) with Symantec's
 **Visual Architect** and the **THINK Class Library 2.0** (Symantec C++ 7). Written, compiled, linked and tested on a
 System 7.6.1 guest in Basilisk II through [AppleBridge](https://github.com/LoetLuemmel/AppleBridge).
 
