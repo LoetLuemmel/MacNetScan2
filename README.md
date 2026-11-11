@@ -140,6 +140,14 @@ and the zone appear; the AppleTalk view then lists the network, its hops, router
 The freeze is not in Basilisk: its `.ENET` driver answers every unknown control call with `controlErr` and completes
 it (`BasiliskII/src/ether.cpp`). It is inside Open Transport's layer above that driver.
 
+## Compatibility
+
+Please don't be offended: the best setup is Basilisk II on Linux. There the guest is bridged through a `tun` interface, so `tcpdump -I tun0` on the host records its conversations in both directions, and MacNetScan's Open `pcap` shows each request next to its reply. On macOS, Basilisk II's etherhelper backend works fine for scanning and live listening, but it has no such interface to capture from, and Open Transport never hands on a Mac's own outgoing frames. So the live Frames view only shows the replies.
+
+The app itself is only about 672 KB. It should run on a real 68K Mac with System 7 and Open Transport. When I find the time, I'll try it on a PowerBook Duo in a Duo Dock with an Ethernet card and an external color monitor (the Duo's own screen is too small for the window).
+You might yell for a SE/30 version, so go ahead and compile a smaller screen.
+However most Users might have dried caps, thus running System 7 in BAII or SheepShaver instead.
+
 ## Authorized use only
 
 MacNetScan actively probes hosts. Use it only on networks you own or are explicitly allowed to scan.
